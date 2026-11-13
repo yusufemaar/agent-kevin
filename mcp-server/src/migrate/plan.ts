@@ -10,7 +10,7 @@ import { RUNTIME_DIR } from '@/shared/naming';
 import { canonicalPath, recordedGitDir } from '@/home/git-dir-record';
 import { type PathMove, type RuleContext, SOURCE, TARGET, migrateText, productText, taskAssignee } from './rules';
 import { isInside } from '@/shared/paths';
-import { type JsonObject, isObject, leftovers, migrateCodexConfig, migrateCodexHooks, migrateSettings } from './settings';
+import { type JsonObject, leftovers, migrateCodexConfig, migrateCodexHooks, migrateSettings } from './settings';
 
 export interface MigrateOptions {
   /** The home to move, and the folder it moves to (which must not exist yet). */
@@ -29,6 +29,8 @@ export interface MigrateOptions {
   checkout?: string;
   /** The checkout this command runs from, when it is one: the home may name it without a marketplace entry. */
   sourceCheckout?: string;
+  /** The folders the home's knowledge, projects and reports actually resolve to, overrides included. */
+  roots: { knowledge: string; projects: string; reports: string };
   /** Where Claude Code keeps transcripts by launch folder, and where history folders live. */
   claudeProjects: string;
   stateRoot: string;
@@ -55,6 +57,8 @@ export interface Plan {
   copies: { from: string; to: string }[];
   history: { from: string; to: string } | null;
   transcripts: string[];
+  /** The knowledge folder, relative to the home, that capture writes into. */
+  knowledge: string;
   report: {
     agent: { name: string; formerly: string[]; emoji?: string; avatar?: string };
     persona: LineChange[];
@@ -72,13 +76,14 @@ const TREES = [join('.claude', 'rules'), 'knowledge', 'projects'];
 const DATED = [join('knowledge', 'raw'), join('projects', 'TASKS.md')];
 const DAILY = /^\d{4}-\d{2}-\d{2}\.md$/;
 const THREAD = /^## Thread[ \t]*$/m;
+/** A day log's session heading, with the first eight characters of the session's id. */
+const SESSION_HEADER = /^### Session \([^)]*\) \[([0-9a-f]{8})/gm;
 const SETTINGS = [join('.claude', 'settings.json'), join('.claude', 'settings.local.json'), '.mcp.json'];
 const CODEX_CONFIG = join('.codex', 'config.toml');
 const CODEX_HOOKS = join('.codex', 'hooks.json');
 const CODEX_RULES = join('.codex', 'rules', `${SOURCE.server}.rules`);
 const TEMPLATE_BASE = join(RUNTIME_DIR, 'template-base');
 const MANUAL_TREES = [join('.claude', 'skills'), 'scripts'];
-const RELOCATED = ['AGENT_KNOWLEDGE', 'AGENT_PROJECTS', 'AGENT_REPORTS'];
 
 const lstat = (path: string) => lstatSync(path, { throwIfNoEntry: false });
 
@@ -199,14 +204,16 @@ const transcriptsOf = (home: string, claudeProjects: string): string[] => {
   }
   const sessionsDir = join(home, 'knowledge', 'raw', 'sessions');
   const indexed = Object.keys((readJson(join(sessionsDir, 'index.json'))?.sessions as JsonObject | undefined) ?? {});
-  const logs = filesUnder(home, join('knowledge', 'raw', 'sessions'), () => false)
-    .map((rel) => textOf(join(home, rel)) ?? '')
-    .join('\n');
+  const logged = new Set(
+    filesUnder(home, join('knowledge', 'raw', 'sessions'), () => false).flatMap((rel) =>
+      [...(textOf(join(home, rel)) ?? '').matchAll(SESSION_HEADER)].map((match) => match[1])
+    )
+  );
   return readdirSync(folder)
     .filter((name) => name.endsWith('.jsonl'))
     .filter((name) => {
       const id = name.slice(0, -'.jsonl'.length);
-      return indexed.includes(id) || (!indexed.includes(id.slice(0, 8)) && !logs.includes(`[${id.slice(0, 8)}`));
+      return indexed.includes(id) || (!indexed.includes(id.slice(0, 8)) && !logged.has(id.slice(0, 8)));
     })
     .map((name) => join(folder, name));
 };
@@ -243,10 +250,13 @@ export const planMigration = (options: MigrateOptions): Plan => {
   if (oldCheckout && newCheckout && readJson(join(newCheckout, '.claude-plugin', 'plugin.json'))?.name !== TARGET.plugin) {
     blockers.push(`${newCheckout} is not a ${TARGET.plugin} checkout; pass --checkout <path>`);
   }
-  settingsFiles
-    .flatMap(({ json }) => Object.entries(isObject(json?.env) ? json.env : {}))
-    .filter(([key, value]) => RELOCATED.includes(key) && typeof value === 'string' && value.trim() !== '')
-    .forEach(([key]) => blockers.push(`${key} keeps part of this home outside its folder, which a copy would miss; move it back first`));
+  Object.entries(options.roots)
+    .filter(([, root]) => !isInside(canonicalPath(root), home))
+    .forEach(([name, root]) => blockers.push(`this home's ${name} lives outside it (${root}), so a copy would miss it; move it back first`));
+  // A copy inside the folder it copies would recurse into itself.
+  if (isInside(to, home)) {
+    blockers.push(`${to} is inside the home it would copy; pick a folder outside it`);
+  }
   const oldHistory = historyOf(home, options.userHome);
   const newHistory = oldHistory ? join(options.stateRoot, TARGET.stateFolder, `${historyName(to, options.userHome)}.git`) : null;
   if (newHistory && existsSync(newHistory)) {
@@ -424,7 +434,13 @@ export const planMigration = (options: MigrateOptions): Plan => {
     })
   );
 
-  const linked = [...edits.map((edit) => edit.path), ...deletes].filter((rel) =>
+  const written = [
+    ...edits.map((edit) => edit.path),
+    ...deletes,
+    ...(report.agent.avatar ? [report.agent.avatar] : []),
+    join(relative(home, canonicalPath(options.roots.knowledge)), 'raw', 'sessions')
+  ];
+  const linked = written.filter((rel) =>
     rel.split(sep).some((_, index, parts) => lstat(join(home, ...parts.slice(0, index + 1)))?.isSymbolicLink())
   );
   if (linked.length > 0) {
@@ -440,6 +456,7 @@ export const planMigration = (options: MigrateOptions): Plan => {
     copies: options.avatar && report.agent.avatar ? [{ from: options.avatar, to: report.agent.avatar }] : [],
     history: oldHistory && newHistory ? { from: oldHistory, to: newHistory } : null,
     transcripts: transcriptsOf(home, options.claudeProjects),
+    knowledge: relative(home, canonicalPath(options.roots.knowledge)),
     report
   };
 };

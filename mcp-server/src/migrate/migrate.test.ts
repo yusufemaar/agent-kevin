@@ -64,6 +64,7 @@ const fixture = () => {
     keep: ['AGENTS.md:4'],
     userHome: user,
     pluginVersion: '9.9.9',
+    roots: { knowledge: join(home, 'knowledge'), projects: join(home, 'projects'), reports: join(home, 'reports') },
     claudeProjects: join(user, '.claude', 'projects'),
     stateRoot: state
   };
@@ -233,10 +234,26 @@ describe('migrate keeps to the home it copies', () => {
     expect(readFileSync(join(gitDir, 'index')).equals(index)).toBe(true);
   });
 
-  test('a home that keeps its knowledge outside its folder is refused', () => {
+  test('a home whose knowledge resolves outside its folder is refused, and one inside it is not', () => {
     const { home, options } = fixture();
-    write(join(home, '.claude', 'settings.json'), JSON.stringify({ env: { AGENT_KNOWLEDGE: '/elsewhere/knowledge' } }));
-    expect(planMigration(options).blockers.join('\n')).toContain('AGENT_KNOWLEDGE keeps part of this home outside its folder');
+    expect(planMigration({ ...options, roots: { ...options.roots, knowledge: '/elsewhere/knowledge' } }).blockers.join('\n')).toContain(
+      "this home's knowledge lives outside it (/elsewhere/knowledge)"
+    );
+    expect(planMigration({ ...options, roots: { ...options.roots, knowledge: join(home, 'knowledge') } }).blockers).toEqual([]);
+  });
+
+  test('a new folder inside the old home is refused before anything is written', () => {
+    const { home, options } = fixture();
+    expect(planMigration({ ...options, to: join(home, 'new', 'Oppi') }).blockers.join('\n')).toContain('is inside the home it would copy');
+    expect(existsSync(join(home, 'new'))).toBe(false);
+  });
+
+  test('a session id quoted in conversation text is not mistaken for its capture', () => {
+    const { home, options } = fixture();
+    const folder = join(options.claudeProjects, home.replace(/[^A-Za-z0-9-]/g, '-'));
+    write(join(home, 'knowledge', 'raw', 'sessions', '2026-11-12.md'), '### Session (10:00) [eeee5555] · ~/Agents/Kevin\n\n**User:** resume [ffff6666 please\n');
+    write(join(folder, 'ffff6666-quoted.jsonl'), '{}\n');
+    expect(planMigration(options).transcripts).toEqual([join(folder, 'ffff6666-quoted.jsonl')]);
   });
 
   test('a planned write through a symlink is refused', () => {
@@ -267,7 +284,7 @@ describe('migrate keeps to the home it copies', () => {
     write(join(home, '.state', 'version.json'), JSON.stringify({ plugin: 'agent-kevin', templateVersion: '9.9.9' }));
     write(join(home, 'AGENTS.md'), 'Run /agent-kevin:sync.\n');
     const result = await applyMigration(
-      planMigration({ ...fixture().options, home, to: join(outer, 'Agents', 'Oppi'), checkout: undefined }),
+      planMigration({ ...fixture().options, home, to: join(outer, 'Agents', 'Oppi'), checkout: undefined, roots: { knowledge: join(home, 'knowledge'), projects: join(home, 'projects'), reports: join(home, 'reports') } }),
       false
     );
     expect(result.commits).toEqual([]);

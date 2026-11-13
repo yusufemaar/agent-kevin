@@ -5,6 +5,7 @@
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
+import { FOLDERS } from '@/config';
 import { applyMigration } from './apply';
 import { planMigration } from './plan';
 
@@ -49,6 +50,7 @@ export const runMigrate = async (argv: string[], home: string, pluginVersion: st
     sourceCheckout: existsSync(join(pluginRoot, '.git')) ? pluginRoot : undefined,
     userHome: homedir(),
     pluginVersion,
+    roots: { knowledge: FOLDERS.KNOWLEDGE, projects: FOLDERS.PROJECTS, reports: FOLDERS.REPORTS },
     claudeProjects: join(homedir(), '.claude', 'projects'),
     stateRoot: join(homedir(), '.local', 'state')
   });

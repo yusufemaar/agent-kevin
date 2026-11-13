@@ -1,0 +1,72 @@
+/**
+ * `kevin migrate`: move this home to a new folder for the agentlayer plugin. A dry run unless
+ * `--apply`; `--retire` also stamps this home as moved. Prints one JSON report.
+ */
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { isAbsolute, join, resolve } from 'node:path';
+import { applyMigration } from './apply';
+import { planMigration } from './plan';
+
+const USAGE =
+  'Usage: migrate --to <new folder> [--name <Name>] [--emoji <emoji>] [--avatar <image>] [--keep <path>:<line>]... [--checkout <agentlayer checkout>] [--apply [--retire]]';
+
+export const runMigrate = async (argv: string[], home: string, pluginVersion: string, pluginRoot: string): Promise<number> => {
+  const value = (name: string): string | undefined => {
+    const inline = argv.find((arg) => arg.startsWith(`--${name}=`));
+    if (inline) {
+      return inline.slice(name.length + 3);
+    }
+    const at = argv.indexOf(`--${name}`);
+    return at >= 0 ? argv[at + 1] : undefined;
+  };
+  const values = (name: string): string[] =>
+    argv.flatMap((arg, index) =>
+      arg === `--${name}` ? [argv[index + 1] ?? ''] : arg.startsWith(`--${name}=`) ? [arg.slice(name.length + 3)] : []
+    );
+  const path = (raw: string | undefined): string | undefined =>
+    raw === undefined ? undefined : resolve(raw.replace(/^~(?=\/|$)/, homedir()));
+
+  const to = path(value('to'));
+  if (!to || !isAbsolute(to)) {
+    console.error(USAGE);
+    return 1;
+  }
+  const apply = argv.includes('--apply');
+  const retire = argv.includes('--retire');
+  if (retire && !apply) {
+    console.error('--retire only goes with --apply, on the run that moves the home for good.');
+    return 1;
+  }
+  const plan = planMigration({
+    home,
+    to,
+    name: value('name'),
+    emoji: value('emoji'),
+    avatar: path(value('avatar')),
+    keep: values('keep'),
+    checkout: path(value('checkout')),
+    sourceCheckout: existsSync(join(pluginRoot, '.git')) ? pluginRoot : undefined,
+    userHome: homedir(),
+    pluginVersion,
+    claudeProjects: join(homedir(), '.claude', 'projects'),
+    stateRoot: join(homedir(), '.local', 'state')
+  });
+  const summary = {
+    from: plan.from,
+    to: plan.to,
+    history: plan.history,
+    blockers: plan.blockers,
+    files: plan.edits.length,
+    deletes: plan.deletes,
+    transcriptsToCapture: plan.transcripts.length,
+    ...plan.report
+  };
+  if (!apply || plan.blockers.length > 0) {
+    console.log(JSON.stringify({ mode: 'dry-run', ...summary }, null, 2));
+    return plan.blockers.length > 0 && apply ? 2 : 0;
+  }
+  const result = await applyMigration(plan, retire);
+  console.log(JSON.stringify({ mode: 'applied', ...summary, result }, null, 2));
+  return 0;
+};

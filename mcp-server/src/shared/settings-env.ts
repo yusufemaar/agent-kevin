@@ -29,3 +29,8 @@ export function loadSettingsEnv(start: string): void {
     dir = parent;
   }
 }
+
+/** Sets one variable for this process and the code it loads next, ahead of anything a settings file says. */
+export const pinEnv = (key: string, value: string): void => {
+  process.env[key] = value;
+};

@@ -1,0 +1,422 @@
+/**
+ * What `migrate` would write: every file of the new home whose text changes, computed from the old
+ * home without touching it. The dry run prints this plan; `apply` copies the home and writes it.
+ */
+import { execFileSync } from 'node:child_process';
+import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
+import { basename, dirname, extname, join, relative, sep } from 'node:path';
+import { FORMERLY_FIELD, NAME_FIELD, NAME_RE, agentNameIn, formerNamesIn } from '@/shared/agent-name';
+import { RUNTIME_DIR } from '@/shared/naming';
+import { canonicalPath, recordedGitDir } from '@/home/git-dir-record';
+import { type PathMove, type RuleContext, SOURCE, TARGET, migrateText, productText, taskAssignee } from './rules';
+import { type JsonObject, leftovers, migrateCodexConfig, migrateCodexHooks, migrateSettings } from './settings';
+
+export interface MigrateOptions {
+  /** The home to move, and the folder it moves to (which must not exist yet). */
+  home: string;
+  to: string;
+  /** The agent's new name, emoji and avatar image; each kept when absent. */
+  name?: string;
+  emoji?: string;
+  avatar?: string;
+  /** `path:line` entries the rename leaves as written: a person or product that shares the name. */
+  keep: string[];
+  userHome: string;
+  /** This plugin's version: the home must be upgraded to it first. */
+  pluginVersion: string;
+  /** The new plugin's checkout, for a home that loads the old one from a checkout. */
+  checkout?: string;
+  /** The checkout this command runs from, when it is one: the home may name it without a marketplace entry. */
+  sourceCheckout?: string;
+  /** Where Claude Code keeps transcripts by launch folder, and where history folders live. */
+  claudeProjects: string;
+  stateRoot: string;
+}
+
+export interface Edit {
+  path: string;
+  text: string;
+}
+
+export interface LineChange {
+  path: string;
+  line: number;
+  before: string;
+  after: string;
+}
+
+export interface Plan {
+  from: string;
+  to: string;
+  blockers: string[];
+  edits: Edit[];
+  deletes: string[];
+  copies: { from: string; to: string }[];
+  history: { from: string; to: string } | null;
+  transcripts: string[];
+  report: {
+    agent: { name: string; formerly: string[]; emoji?: string; avatar?: string };
+    persona: LineChange[];
+    product: LineChange[];
+    other: Record<string, number>;
+    review: LineChange[];
+    leftovers: string[];
+    manual: string[];
+  };
+}
+
+const IDENTITY = 'IDENTITY.md';
+const ROOT_FILES = ['SOUL.md', IDENTITY, 'AGENTS.md', 'USER.md', join('.claude', 'CLAUDE.md')];
+const TREES = [join('.claude', 'rules'), 'knowledge', 'projects'];
+const DATED = [join('knowledge', 'raw'), join('projects', 'TASKS.md')];
+const DAILY = /^\d{4}-\d{2}-\d{2}\.md$/;
+const THREAD = /^## Thread[ \t]*$/m;
+const SETTINGS = [join('.claude', 'settings.json'), join('.claude', 'settings.local.json'), '.mcp.json'];
+const CODEX_CONFIG = join('.codex', 'config.toml');
+const CODEX_HOOKS = join('.codex', 'hooks.json');
+const CODEX_RULES = join('.codex', 'rules', `${SOURCE.server}.rules`);
+const TEMPLATE_BASE = join(RUNTIME_DIR, 'template-base');
+const MANUAL_TREES = [join('.claude', 'skills'), 'scripts'];
+
+const lstat = (path: string) => lstatSync(path, { throwIfNoEntry: false });
+
+/** Every file under `rel` in `home`, skipping dot-entries and symlinks; `markdown` keeps `.md` only. */
+const filesUnder = (home: string, rel: string, skip: (rel: string, name: string) => boolean, markdown = true): string[] =>
+  lstat(join(home, rel))?.isDirectory()
+    ? readdirSync(join(home, rel), { withFileTypes: true })
+        .filter((entry) => !entry.name.startsWith('.'))
+        .sort((left, right) => (left.name < right.name ? -1 : 1))
+        .flatMap((entry) => {
+          const child = join(rel, entry.name);
+          if (skip(child, entry.name)) {
+            return [];
+          }
+          if (entry.isDirectory()) {
+            return filesUnder(home, child, skip, markdown);
+          }
+          return entry.isFile() && (!markdown || entry.name.endsWith('.md')) ? [child] : [];
+        })
+    : [];
+
+/** The text the rename may rewrite: what the agent reads now, never a dated record. */
+const curated = (home: string): string[] => [
+  ...ROOT_FILES.filter((rel) => lstat(join(home, rel))?.isFile()),
+  ...TREES.flatMap((tree) =>
+    filesUnder(
+      home,
+      tree,
+      (rel, name) =>
+        DATED.includes(rel) || name === 'archive' || (rel.startsWith(join('knowledge', 'memory')) && DAILY.test(name))
+    )
+  )
+];
+
+const taskFiles = (home: string): string[] =>
+  filesUnder(home, 'projects', () => false).filter((rel) => rel.split(sep).includes('tasks') && basename(rel) !== 'TASKS.md');
+
+/** The file's text, or null when it isn't clean UTF-8 and a rewrite would mangle it. */
+const textOf = (path: string): string | null => {
+  const buffer = readFileSync(path);
+  const text = buffer.toString('utf-8');
+  return Buffer.from(text, 'utf-8').equals(buffer) ? text : null;
+};
+
+const posix = (rel: string): string => rel.split(sep).join('/');
+
+const lineChanges = (path: string, before: string, after: string): LineChange[] => {
+  const old = before.split('\n');
+  return after.split('\n').flatMap((line, index) =>
+    line === old[index] ? [] : [{ path: posix(path), line: index + 1, before: (old[index] ?? '').trim(), after: line.trim() }]
+  );
+};
+
+/** A home's location as a history folder name: its path under the user's home, separators as dashes. */
+export const historyName = (home: string, userHome: string): string =>
+  (home.startsWith(`${userHome}/`) ? relative(userHome, home) : home)
+    .split(sep)
+    .filter(Boolean)
+    .join('-')
+    .replace(/[^A-Za-z0-9._-]+/g, '-') || 'home';
+
+/** The history folder a home is bound to: the recorded one, the `.git` file's target, or none. */
+const historyOf = (home: string, userHome: string): string | null => {
+  const recorded = recordedGitDir(home);
+  if (recorded) {
+    return recorded.replace(/^~(?=\/)/, userHome);
+  }
+  const link = join(home, '.git');
+  if (lstat(link)?.isFile()) {
+    return readFileSync(link, 'utf-8').match(/^gitdir:\s*(.+)$/m)?.[1]?.trim() ?? null;
+  }
+  return null;
+};
+
+const historyDirty = (home: string, gitDir: string | null): boolean => {
+  const args = gitDir ? ['--git-dir', gitDir, '--work-tree', home] : ['-C', home];
+  if (!gitDir && !lstat(join(home, '.git'))?.isDirectory()) {
+    return false;
+  }
+  try {
+    return execFileSync('git', [...args, 'status', '--porcelain'], { encoding: 'utf8' }).trim() !== '';
+  } catch {
+    return false;
+  }
+};
+
+const readJson = (path: string): JsonObject | null => {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, 'utf-8'));
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? (parsed as JsonObject) : null;
+  } catch {
+    return null;
+  }
+};
+
+/** The checkout a home loads the old plugin from, when it registered one as a directory marketplace. */
+const oldCheckoutOf = (settings: (JsonObject | null)[]): string | null =>
+  settings
+    .map((file) => {
+      const market = file?.extraKnownMarketplaces;
+      const entry = typeof market === 'object' && market !== null && !Array.isArray(market) ? market[SOURCE.devMarketplace] : undefined;
+      const source = typeof entry === 'object' && entry !== null && !Array.isArray(entry) ? entry.source : undefined;
+      const path = typeof source === 'object' && source !== null && !Array.isArray(source) ? source.path : undefined;
+      return typeof path === 'string' ? path : null;
+    })
+    .find((path): path is string => path !== null) ?? null;
+
+/**
+ * Transcripts Claude Code holds for the old home that its brain hasn't captured, or may have only in
+ * part: unknown to the session index (by full id or the short id older captures used), or changed
+ * after the day log of its last capture was written. Capture skips turns it already has.
+ */
+const uncaptured = (home: string, claudeProjects: string): string[] => {
+  const folder = join(claudeProjects, home.replace(/[^A-Za-z0-9-]/g, '-'));
+  if (!existsSync(folder)) {
+    return [];
+  }
+  const sessionsDir = join(home, 'knowledge', 'raw', 'sessions');
+  const index = readJson(join(sessionsDir, 'index.json'));
+  const sessions = (index?.sessions ?? {}) as Record<string, { last_seen?: string }>;
+  return readdirSync(folder)
+    .filter((name) => name.endsWith('.jsonl'))
+    .filter((name) => {
+      const id = name.slice(0, -'.jsonl'.length);
+      const seen = (sessions[id] ?? sessions[id.slice(0, 8)])?.last_seen;
+      const dayLog = seen ? lstat(join(sessionsDir, `${seen}.md`)) : undefined;
+      return !dayLog || lstatSync(join(folder, name)).mtimeMs > dayLog.mtimeMs + 1_000;
+    })
+    .map((name) => join(folder, name));
+};
+
+export const planMigration = (options: MigrateOptions): Plan => {
+  const home = canonicalPath(options.home);
+  const to = options.to;
+  const blockers: string[] = [];
+  const version = readJson(join(home, RUNTIME_DIR, 'version.json'));
+  if (version?.plugin !== SOURCE.plugin) {
+    blockers.push(`${home} is not an ${SOURCE.plugin} home (no ${RUNTIME_DIR}/version.json recording it)`);
+  } else if (version.templateVersion !== options.pluginVersion) {
+    blockers.push(
+      `the home is on ${String(version.templateVersion)}; run /${SOURCE.plugin}:upgrade to ${options.pluginVersion} first`
+    );
+  }
+  if (existsSync(to)) {
+    blockers.push(`${to} already exists; migrate copies into a new folder`);
+  }
+  if (options.name !== undefined && !NAME_RE.test(options.name)) {
+    blockers.push(`--name "${options.name}" must match ${NAME_RE} (letters, digits, spaces, hyphens)`);
+  }
+  if (options.avatar !== undefined && !lstat(options.avatar)?.isFile()) {
+    blockers.push(`--avatar ${options.avatar} is not a file`);
+  }
+
+  const identity = existsSync(join(home, IDENTITY)) ? (textOf(join(home, IDENTITY)) ?? '') : '';
+  const current = agentNameIn(identity);
+  const rename = options.name && current && options.name !== current ? { from: current, to: options.name } : undefined;
+
+  const settingsFiles = SETTINGS.map((rel) => ({ rel, json: readJson(join(home, rel)) }));
+  const oldCheckout = oldCheckoutOf(settingsFiles.map(({ json }) => json)) ?? options.sourceCheckout ?? null;
+  const newCheckout = options.checkout ?? (oldCheckout ? join(dirname(oldCheckout), TARGET.checkout) : null);
+  if (oldCheckout && newCheckout && readJson(join(newCheckout, '.claude-plugin', 'plugin.json'))?.name !== TARGET.plugin) {
+    blockers.push(`${newCheckout} is not a ${TARGET.plugin} checkout; pass --checkout <path>`);
+  }
+  const oldHistory = historyOf(home, options.userHome);
+  const newHistory = oldHistory ? join(options.stateRoot, TARGET.stateFolder, `${historyName(to, options.userHome)}.git`) : null;
+  if (newHistory && existsSync(newHistory)) {
+    blockers.push(`${newHistory} already exists`);
+  }
+  if (historyDirty(home, oldHistory)) {
+    blockers.push('the home has changes its history has not committed; run sync first');
+  }
+
+  const homeMove: PathMove = { from: home, to };
+  const paths: PathMove[] = [
+    homeMove,
+    ...(oldCheckout && newCheckout ? [{ from: oldCheckout, to: newCheckout }] : []),
+    ...(oldHistory && newHistory ? [{ from: oldHistory, to: newHistory }] : [])
+  ];
+  const context: RuleContext = { home: homeMove, paths, rename };
+  const keepBy = (rel: string): Set<number> =>
+    new Set(
+      options.keep
+        .filter((entry) => entry.slice(0, entry.lastIndexOf(':')) === posix(rel))
+        .map((entry) => Number(entry.slice(entry.lastIndexOf(':') + 1)))
+    );
+
+  const edits: Edit[] = [];
+  const report: Plan['report'] = {
+    agent: { name: rename?.to ?? current, formerly: formerNamesIn(identity) },
+    persona: [],
+    product: [],
+    other: {},
+    review: [],
+    leftovers: [],
+    manual: []
+  };
+  const count = (kind: string, changes: number): void => {
+    if (changes > 0) {
+      report.other[kind] = (report.other[kind] ?? 0) + changes;
+    }
+  };
+
+  const tasks = new Set(taskFiles(home));
+  const markdown = curated(home);
+  [...new Set([...markdown, ...tasks])].forEach((rel) => {
+    const before = textOf(join(home, rel));
+    if (before === null) {
+      report.manual.push(`${posix(rel)}: not UTF-8, left as written`);
+      return;
+    }
+    const keep = keepBy(rel);
+    const inScope = markdown.includes(rel);
+    // A task's thread is its dated log, kept as written like the other dated records.
+    const thread = tasks.has(rel) ? before.search(THREAD) : -1;
+    const head = thread === -1 ? before : before.slice(0, thread);
+    const tail = thread === -1 ? '' : before.slice(thread);
+    const plain = inScope ? migrateText(head, { ...context, rename: undefined }, options.userHome, keep) + tail : before;
+    const renamed = inScope && rename ? migrateText(head, context, options.userHome, keep) + tail : plain;
+    const after = tasks.has(rel) ? taskAssignee(renamed) : renamed;
+    if (after === before) {
+      return;
+    }
+    edits.push({ path: rel, text: after });
+    const personaLines = new Set(lineChanges(rel, plain, renamed).map((change) => change.line));
+    lineChanges(rel, before, after).forEach((change) => {
+      if (personaLines.has(change.line)) {
+        report.persona.push(change);
+      } else if (/agentlayer(?![-\w@:_])/.test(change.after) && !/agentlayer(?![-\w@:_])/.test(change.before)) {
+        report.product.push(change);
+      } else {
+        count('paths, commands and tool names', 1);
+      }
+    });
+    if (!rename || rename.from !== 'Kevin') {
+      report.review.push(
+        ...after
+          .split('\n')
+          .flatMap((line, index) => (/(?<![\w/-])Kevin(?![\w/-])/.test(line) ? [{ path: posix(rel), line: index + 1, before: line.trim(), after: line.trim() }] : []))
+      );
+    }
+  });
+
+  const oldAvatar = identity.match(/^!\[[^\]]*\]\(([^)]+)\)/m)?.[1];
+  if (rename || options.emoji || options.avatar) {
+    const path = IDENTITY;
+    const base = edits.find((edit) => edit.path === path)?.text ?? identity;
+    const formerly = rename ? [...formerNamesIn(identity).filter((name) => name !== rename.from && name !== rename.to), rename.from] : [];
+    const eol = base.includes('\r\n') ? '\r\n' : '\n';
+    const withName = rename ? base.replace(NAME_FIELD, `$1 ${rename.to}`) : base;
+    const withFormerly = !rename
+      ? withName
+      : FORMERLY_FIELD.test(withName)
+        ? withName.replace(FORMERLY_FIELD, `- **Formerly:** ${formerly.join(', ')}`)
+        : withName.replace(NAME_FIELD, `$&${eol}- **Formerly:** ${formerly.join(', ')}`);
+    const withEmoji = options.emoji ? withFormerly.replace(/^(.*?\*\*Emoji:\*\*)[ \t]*.*$/m, `$1 ${options.emoji}`) : withFormerly;
+    const avatarRel = options.avatar
+      ? posix(join('assets', `${(rename?.to ?? current).toLowerCase().replace(/[^a-z0-9]+/g, '-')}-avatar${extname(options.avatar)}`))
+      : undefined;
+    const withAvatar =
+      avatarRel && oldAvatar
+        ? withEmoji.replace(/^!\[[^\]]*\]\([^)]+\)/m, `![${rename?.to ?? current}](${avatarRel})`).replace(
+            /^(.*?\*\*Avatar:\*\*)[ \t]*.*$/m,
+            `$1 [\`${avatarRel}\`](${avatarRel})`
+          )
+        : withEmoji;
+    const others = edits.filter((edit) => edit.path !== path);
+    edits.length = 0;
+    edits.push(...others, { path, text: withAvatar });
+    report.agent = { name: rename?.to ?? current, formerly: rename ? formerly : formerNamesIn(identity), emoji: options.emoji, avatar: avatarRel };
+  }
+
+  settingsFiles.forEach(({ rel, json }) => {
+    if (!json) {
+      return;
+    }
+    const migrated = migrateSettings(json, paths, options.userHome);
+    if (JSON.stringify(migrated) !== JSON.stringify(json)) {
+      edits.push({ path: rel, text: `${JSON.stringify(migrated, null, 2)}\n` });
+      count('settings files', 1);
+    }
+    report.leftovers.push(...leftovers(migrated).map((entry) => `${posix(rel)} ${entry}`));
+  });
+
+  const codexConfig = existsSync(join(home, CODEX_CONFIG)) ? readFileSync(join(home, CODEX_CONFIG), 'utf-8') : null;
+  if (codexConfig !== null) {
+    const after = migrateCodexConfig(codexConfig, paths, options.userHome);
+    if (after !== codexConfig) {
+      edits.push({ path: CODEX_CONFIG, text: after });
+      count('Codex files', 1);
+    }
+  }
+  const codexHooks = readJson(join(home, CODEX_HOOKS));
+  if (codexHooks) {
+    const after = migrateCodexHooks(codexHooks);
+    if (JSON.stringify(after) !== JSON.stringify(codexHooks)) {
+      edits.push({ path: CODEX_HOOKS, text: `${JSON.stringify(after, null, 2)}\n` });
+      count('Codex files', 1);
+    }
+  }
+  const deletes = [
+    ...(existsSync(join(home, CODEX_RULES)) ? [CODEX_RULES] : []),
+    ...(report.agent.avatar && oldAvatar && oldAvatar !== report.agent.avatar && existsSync(join(home, oldAvatar)) ? [oldAvatar] : [])
+  ];
+
+  filesUnder(home, TEMPLATE_BASE, () => false).forEach((rel) => {
+    const before = textOf(join(home, rel));
+    const after = before === null ? null : before.split('\n').map(productText).join('\n');
+    if (before !== null && after !== null && after !== before) {
+      edits.push({ path: rel, text: after });
+      count('template baseline files', 1);
+    }
+  });
+
+  if (version) {
+    edits.push({
+      path: join(RUNTIME_DIR, 'version.json'),
+      text: `${JSON.stringify({ ...version, plugin: TARGET.plugin, migratedFrom: { plugin: SOURCE.plugin, home } }, null, 2)}\n`
+    });
+  }
+
+  MANUAL_TREES.forEach((tree) =>
+    filesUnder(home, tree, () => false, false).forEach((rel) => {
+      const text = textOf(join(home, rel)) ?? '';
+      text.split('\n').forEach((line, index) => {
+        if (/agent-kevin|bin\/kevin|mcp__plugin_agent-kevin/.test(line)) {
+          report.manual.push(`${posix(rel)}:${index + 1}: ${line.trim()}`);
+        }
+      });
+    })
+  );
+
+  return {
+    from: home,
+    to,
+    blockers,
+    edits,
+    deletes,
+    copies: options.avatar && report.agent.avatar ? [{ from: options.avatar, to: report.agent.avatar }] : [],
+    history: oldHistory && newHistory ? { from: oldHistory, to: newHistory } : null,
+    transcripts: uncaptured(home, options.claudeProjects),
+    report
+  };
+};

@@ -208,6 +208,8 @@ Knowledge commands:
   knowledge lint [--fix]            Structural health check; --fix rewrites stale wikilinks + inserts backlinks
 
 Seed commands (prefer the /${PLUGIN}:seed export skill inside Claude Code — it runs the interview + review gate):
+  migrate --to <folder> [--name N] [--emoji E] [--avatar F] [--keep path:line]... [--apply [--retire]]
+                                    Copy this home to <folder> for the agentlayer plugin; a dry run unless --apply
   seed scan                         Detect what this home could seed a teammate with (read-only JSON)
   seed export --include=p1,p2 --name=AGENT [--out=PATH]
                                     Build a seed bundle zip from home-relative paths (no review gate here — you are the gate)
@@ -524,6 +526,12 @@ async function run(): Promise<void> {
       default:
         throw new Error(`Unknown seed subcommand: ${command}`);
     }
+  }
+
+  if (group === 'migrate') {
+    const { runMigrate } = await import(resolve(PLUGIN_ROOT, 'mcp-server/src/migrate/cli'));
+    const { PLUGIN_VERSION } = await import(resolve(PLUGIN_ROOT, 'mcp-server/src/config'));
+    process.exit(await runMigrate([command, ...args].filter((arg) => arg !== undefined), FOLDERS.HOME, PLUGIN_VERSION, PLUGIN_ROOT));
   }
 
   if (group === 'database') {

@@ -1,5 +1,5 @@
 import { FILES, FOLDERS, TIMEZONE } from '@/config';
-import { pinnedReports, subscriptionIssue, todaysReports } from '@/context';
+import { assembleContext, pinnedReports, subscriptionIssue, todaysReports } from '@/context';
 import { readMovedTo } from '@/version';
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -62,6 +62,15 @@ describe('the Claude subscription guard', () => {
 });
 
 describe('a home migrate moved', () => {
+  test('every session opens with where it moved, Codex and Claude alike', async () => {
+    mkdirSync(join(FILES.VERSION, '..'), { recursive: true });
+    writeFileSync(FILES.VERSION, JSON.stringify({ plugin: 'agent-kevin', templateVersion: '0.9.5', movedTo: '/x/Agents/Oppi' }));
+    const { context } = await assembleContext({ host: 'codex' });
+    expect(context).toContain('## ⚠️ This home moved');
+    expect(context).toContain('/x/Agents/Oppi');
+    rmSync(FILES.VERSION, { force: true });
+  });
+
   test('names the folder it moved to, and a home still in use names none', () => {
     mkdirSync(join(FILES.VERSION, '..'), { recursive: true });
     writeFileSync(FILES.VERSION, JSON.stringify({ plugin: 'agent-kevin', templateVersion: '0.9.5', movedTo: '/x/Agents/Oppi' }));

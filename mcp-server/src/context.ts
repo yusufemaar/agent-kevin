@@ -571,7 +571,7 @@ export async function assembleContext({
         `## ⚠️ Claude subscription\n\nThis agent has its own Claude subscription, but this session ${subscription} If the operator did start with "agent", \`.state/secrets/.env.claude.json\` is missing \`"${SUBSCRIPTION_MARKER}": "1"\` in its \`env\`.\n\n**Report this to the operator before anything else**: every turn until they restart bills the wrong account.`,
         ...rest
       ]
-    : gathered.parts;
+    : [today, ...rest];
 
   let context = parts.join('\n\n---\n\n');
   if (context.length > CONTEXT.MAX_CHARS) {

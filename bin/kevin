@@ -295,8 +295,8 @@ async function run(): Promise<void> {
   // MCP-invoked traffic. Lazy-imported because @/shared/log resolves AGENT_HOME
   // and we want loadProjectEnv() to have run first.
   const { log } = await import(resolve(PLUGIN_ROOT, 'mcp-server/src/shared/log'));
-  if (group !== 'guard') {
-    // guard runs before every shell command; logging each run would drown the file.
+  if (group !== 'guard' && group !== 'migrate') {
+    // guard runs before every shell command, and migrate promises to write nothing to the home it reads.
     log.with('cli').info(`${group}${command ? ` ${command}` : ''}${args.length ? ` ${args.join(' ')}` : ''}`);
   }
 

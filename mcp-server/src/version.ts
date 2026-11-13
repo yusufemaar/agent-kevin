@@ -68,6 +68,7 @@ export const compareSemver = (a: string, b: string): number => {
 
 interface VersionFile {
   templateVersion?: string;
+  movedTo?: string;
 }
 
 /** HOME template baseline from `<HOME>/<data-dir>/version.json`, or null when the
@@ -76,6 +77,16 @@ export const readHomeBaseline = (): string | null => {
   try {
     const parsed: VersionFile = JSON.parse(readFileSync(FILES.VERSION, 'utf-8'));
     return typeof parsed.templateVersion === 'string' ? parsed.templateVersion : null;
+  } catch {
+    return null;
+  }
+};
+
+/** Where `migrate` moved this home for the agentlayer plugin, or null for a home still in use. */
+export const readMovedTo = (): string | null => {
+  try {
+    const parsed: VersionFile = JSON.parse(readFileSync(FILES.VERSION, 'utf-8'));
+    return typeof parsed.movedTo === 'string' && parsed.movedTo ? parsed.movedTo : null;
   } catch {
     return null;
   }

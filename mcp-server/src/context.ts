@@ -37,7 +37,7 @@ import { readText, readTextAsync } from '@/shared/text';
 import { countOf } from '@/shared/utils';
 import { livePins } from '@/status/surfaces';
 import { statusLineDrift } from '@/statusline/setting';
-import { getUpgradeStatus } from '@/version';
+import { getUpgradeStatus, readMovedTo } from '@/version';
 import { execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
@@ -557,7 +557,14 @@ export async function assembleContext({
       : null;
   const { entries } = gathered;
   // Right after `## Today`, so the size cap below never cuts it.
-  const [today, ...rest] = gathered.parts;
+  const [today, ...movedRest] = gathered.parts;
+  const movedTo = readMovedTo();
+  const rest = movedTo
+    ? [
+        `## ⚠️ This home moved\n\nThis home was copied to \`${movedTo}\` for the agentlayer plugin, and that copy is the live one now. Nothing here is synced or committed any more.\n\n**Tell the operator before anything else**: open a session in \`${movedTo}\` instead. To keep using this folder after all, delete \`movedTo\` from \`.state/version.json\`.`,
+        ...movedRest
+      ]
+    : movedRest;
   const parts = subscription
     ? [
         today,

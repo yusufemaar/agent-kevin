@@ -69,6 +69,18 @@ describe("parseStatusZ", () => {
 });
 
 describe("commitBrain guards", () => {
+  test("a home migrate moved commits nothing and names where it went", () => {
+    const home = makeHome();
+    write(home, "USER.md", "edited after the move\n");
+    write(home, ".state/version.json", JSON.stringify({ plugin: "agent-kevin", movedTo: "/x/Agents/Oppi" }));
+    const before = commitCount(home);
+    const outcome = commitBrain(home);
+    expect(outcome.status).toBe(BrainCommitStatus.SkippedMoved);
+    expect(outcome.detail).toContain("/x/Agents/Oppi");
+    expect(commitCount(home)).toBe(before);
+    rmSync(home, { recursive: true, force: true });
+  });
+
   test("not a repo", () => {
     const home = mkdtempSync(join(tmpdir(), "brain-commit-norepo-"));
     expect(commitBrain(home).status).toBe(BrainCommitStatus.NotARepo);

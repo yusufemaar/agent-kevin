@@ -1,5 +1,6 @@
 import { FILES, FOLDERS, TIMEZONE } from '@/config';
 import { pinnedReports, subscriptionIssue, todaysReports } from '@/context';
+import { readMovedTo } from '@/version';
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -57,5 +58,16 @@ describe('the Claude subscription guard', () => {
   test('a session started with the subscription file, or a home without one, stays quiet', () => {
     expect(subscriptionIssue(true, '1')).toBeNull();
     expect(subscriptionIssue(false, undefined)).toBeNull();
+  });
+});
+
+describe('a home migrate moved', () => {
+  test('names the folder it moved to, and a home still in use names none', () => {
+    mkdirSync(join(FILES.VERSION, '..'), { recursive: true });
+    writeFileSync(FILES.VERSION, JSON.stringify({ plugin: 'agent-kevin', templateVersion: '0.9.5', movedTo: '/x/Agents/Oppi' }));
+    expect(readMovedTo()).toBe('/x/Agents/Oppi');
+    writeFileSync(FILES.VERSION, JSON.stringify({ plugin: 'agent-kevin', templateVersion: '0.9.5' }));
+    expect(readMovedTo()).toBeNull();
+    rmSync(FILES.VERSION, { force: true });
   });
 });

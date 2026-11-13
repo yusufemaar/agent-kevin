@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { HOME_BINDING_KEY, recordedGitDir, stampClaims } from "../../../mcp-server/src/home/git-dir-record";
 import { agentHomePath, env, isAgentHome } from "../../../mcp-server/src/shared/env";
@@ -26,6 +26,7 @@ export const BrainCommitStatus = {
   SkippedNoSnapshot: "SKIPPED_NO_SNAPSHOT",
   SkippedLinkMissing: "SKIPPED_LINK_MISSING",
   SkippedOtherHome: "SKIPPED_OTHER_HOME",
+  SkippedMoved: "SKIPPED_MOVED",
   Clean: "CLEAN",
   Committed: "COMMITTED",
   CommitBlocked: "COMMIT_BLOCKED",
@@ -172,6 +173,18 @@ const inProgressOp = (home: string): boolean => {
 const GRANT_HINT =
   "git could not write to the repo. If history was turned on in this session, start a new session first, since the new write grant may only apply from the next launch. Otherwise, if this HOME keeps its history outside the folder, run the history skill: it records that folder with the permissions.additionalDirectories and sandbox allowWrite grants in <HOME>/.claude/settings.local.json so the sandbox can commit.";
 
+/** Where `migrate` moved this home, or null for a home still in use. */
+const movedToOf = (home: string): string | null => {
+  try {
+    const version: unknown = JSON.parse(readFileSync(join(home, RUNTIME_DIR, "version.json"), "utf-8"));
+    return typeof version === "object" && version !== null && "movedTo" in version && typeof version.movedTo === "string"
+      ? version.movedTo
+      : null;
+  } catch {
+    return null;
+  }
+};
+
 export const commitBrain = (home: string, options: { start?: boolean } = {}): BrainCommitResult => {
   const result = (status: BrainCommitStatus, extra: Partial<BrainCommitResult> = {}): BrainCommitResult => ({
     status,
@@ -180,6 +193,12 @@ export const commitBrain = (home: string, options: { start?: boolean } = {}): Br
     ...extra,
   });
 
+  const movedTo = movedToOf(home);
+  if (movedTo) {
+    return result(BrainCommitStatus.SkippedMoved, {
+      detail: `this home moved to ${movedTo}; that folder is the live one, so nothing here is committed`,
+    });
+  }
   try {
     git(home, "rev-parse", "--git-dir");
   } catch {

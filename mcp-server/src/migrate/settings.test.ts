@@ -111,3 +111,14 @@ describe('migrateCodexHooks', () => {
     ).toEqual({ hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [own] }] } });
   });
 });
+
+describe('the old plugin, and only it', () => {
+  test("an operator's command that merely starts with the CLI's name is kept", () => {
+    const own = { type: 'command', command: 'bun "/Users/ada/bin/kevin-custom" statusline' };
+    expect(migrateSettings({ statusLine: own }, moves, USER).statusLine).toEqual(own);
+  });
+
+  test('an old table header with a trailing comment is still removed', () => {
+    expect(migrateCodexConfig('[mcp_servers.kevin] # generated\ncommand = "bun"\n\n[tui]\nx = 1\n', moves, USER)).toBe('[tui]\nx = 1\n');
+  });
+});

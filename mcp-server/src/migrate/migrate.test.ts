@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { applyMigration } from './apply';
@@ -184,19 +184,17 @@ describe('migrate', () => {
 });
 
 describe('migrate capture', () => {
-  test('a session the brain captured in full is not read again; one that grew since is', () => {
+  test('capture sees a session the index knows by full id, or one found nowhere, never one captured before cursors', () => {
     const { home, options } = fixture();
     const folder = join(options.claudeProjects, home.replace(/[^A-Za-z0-9-]/g, '-'));
     const sessions = join(home, 'knowledge', 'raw', 'sessions');
-    write(join(sessions, 'index.json'), JSON.stringify({ sessions: { done: { last_seen: '2026-11-11' }, 'grown-ab': { last_seen: '2026-11-11' } } }));
-    write(join(folder, 'done.jsonl'), '{}\n');
-    write(join(folder, 'grown-ab.jsonl'), '{}\n');
-    const past = new Date('2026-11-11T10:00:00Z');
-    const later = new Date('2026-11-12T10:00:00Z');
-    utimesSync(join(folder, 'done.jsonl'), past, past);
-    utimesSync(join(sessions, '2026-11-11.md'), later, later);
-    utimesSync(join(folder, 'grown-ab.jsonl'), new Date(), new Date());
-    expect(planMigration(options).transcripts).toEqual([join(folder, 'grown-ab.jsonl')]);
+    write(join(sessions, 'index.json'), JSON.stringify({ sessions: { 'aaaa1111-known': {}, bbbb2222: {} } }));
+    write(join(sessions, '2026-05-20.md'), '### Session (16:00) [cccc3333] · ~/Agents/Kevin\n\n**User:** hi\n');
+    ['aaaa1111-known', 'bbbb2222-short', 'cccc3333-logged', 'dddd4444-new'].forEach((id) => write(join(folder, `${id}.jsonl`), '{}\n'));
+    write(join(folder, 'notes.txt'), 'not a transcript\n');
+    expect(planMigration(options).transcripts.sort()).toEqual(
+      ['aaaa1111-known', 'dddd4444-new'].map((id) => join(folder, `${id}.jsonl`))
+    );
   });
 });
 
@@ -210,5 +208,69 @@ describe('migrate without a marketplace entry', () => {
     const plan = planMigration({ ...options, sourceCheckout: oldCheckout });
     const shared = plan.edits.find((edit) => edit.path === join('.claude', 'settings.json'));
     expect(JSON.parse(shared?.text ?? '{}').permissions.additionalDirectories).toEqual([newCheckout]);
+  });
+});
+
+describe('migrate that stops partway', () => {
+  test('names what it left behind, and the old home is unchanged', async () => {
+    const { home, options, files } = fixture();
+    const before = snapshot(home, files);
+    write(join(options.stateRoot, 'agentlayer'), 'a file where the history folder goes');
+    const plan = planMigration(options);
+    expect(plan.blockers).toEqual([]);
+    const stopped = await applyMigration(plan, true).catch((error: Error) => error.message);
+    expect(stopped).toBe(`The migration stopped partway and ${home} is unchanged; delete ${options.to} and run it again.`);
+    expect(snapshot(home, files)).toEqual(before);
+  });
+});
+
+describe('migrate keeps to the home it copies', () => {
+  test('a dry run leaves the old history index byte for byte', () => {
+    const { home, gitDir, options } = fixture();
+    const index = readFileSync(join(gitDir, 'index'));
+    utimesSync(join(home, 'IDENTITY.md'), new Date(), new Date('2030-01-01'));
+    planMigration(options);
+    expect(readFileSync(join(gitDir, 'index')).equals(index)).toBe(true);
+  });
+
+  test('a home that keeps its knowledge outside its folder is refused', () => {
+    const { home, options } = fixture();
+    write(join(home, '.claude', 'settings.json'), JSON.stringify({ env: { AGENT_KNOWLEDGE: '/elsewhere/knowledge' } }));
+    expect(planMigration(options).blockers.join('\n')).toContain('AGENT_KNOWLEDGE keeps part of this home outside its folder');
+  });
+
+  test('a planned write through a symlink is refused', () => {
+    const { home, user, options } = fixture();
+    const shared = join(user, 'shared-settings.json');
+    write(shared, JSON.stringify({ permissions: { allow: ['Skill(agent-kevin:sync)'] } }));
+    symlinkSync(shared, join(home, '.claude', 'settings.json'));
+    expect(planMigration(options).blockers.join('\n')).toContain("won't write through a symlink in the copy: .claude/settings.json");
+  });
+
+  test('a replaced avatar outside the home is never deleted', () => {
+    const { home, user, options } = fixture();
+    write(join(user, 'Agents', 'shared.jpg'), 'shared');
+    write(join(home, 'IDENTITY.md'), '- **Name:** Kevin\n![Kevin](../shared.jpg)\n- **Avatar:** [`../shared.jpg`](../shared.jpg)\n');
+    const image = join(user, 'oppi.png');
+    write(image, 'new');
+    expect(planMigration({ ...options, avatar: image }).deletes).not.toContain('../shared.jpg');
+  });
+
+  test('a home with no history of its own never commits into a repository around it', async () => {
+    const outer = realpathSync(mkdtempSync(join(tmpdir(), 'migrate-outer-')));
+    roots.push(outer);
+    execFileSync('git', ['init', '-q', outer]);
+    execFileSync('git', ['-C', outer, 'commit', '-q', '--allow-empty', '-m', 'outer'], {
+      env: { ...process.env, GIT_AUTHOR_NAME: 'Ada', GIT_AUTHOR_EMAIL: 'a@acme.example', GIT_COMMITTER_NAME: 'Ada', GIT_COMMITTER_EMAIL: 'a@acme.example' }
+    });
+    const home = join(outer, 'Agents', 'Kevin');
+    write(join(home, '.state', 'version.json'), JSON.stringify({ plugin: 'agent-kevin', templateVersion: '9.9.9' }));
+    write(join(home, 'AGENTS.md'), 'Run /agent-kevin:sync.\n');
+    const result = await applyMigration(
+      planMigration({ ...fixture().options, home, to: join(outer, 'Agents', 'Oppi'), checkout: undefined }),
+      false
+    );
+    expect(result.commits).toEqual([]);
+    expect(execFileSync('git', ['-C', outer, 'rev-list', '--count', 'HEAD'], { encoding: 'utf8' }).trim()).toBe('1');
   });
 });

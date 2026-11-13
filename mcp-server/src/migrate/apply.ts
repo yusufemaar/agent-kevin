@@ -4,10 +4,10 @@
  * read, never written, except for the `movedTo` stamp a final run asks for.
  */
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { RUNTIME_DIR } from '@/shared/naming';
-import { HOME_BINDING_KEY } from '@/home/git-dir-record';
+import { HOME_BINDING_KEY, historyInside } from '@/home/git-dir-record';
 import { pinEnv } from '@/shared/settings-env';
 import type { Plan } from './plan';
 
@@ -26,14 +26,8 @@ const git = (plan: Plan, args: string[]): string => {
   return execFileSync('git', [...where, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 };
 
-const hasHistory = (plan: Plan): boolean => {
-  try {
-    git(plan, ['rev-parse', '--git-dir']);
-    return true;
-  } catch {
-    return false;
-  }
-};
+/** The copy has a history of its own: one kept outside it, or a `.git` folder inside it, never an enclosing repo's. */
+const hasHistory = (plan: Plan): boolean => plan.history !== null || historyInside(plan.to);
 
 /** Commit everything in the copy under `message`, when there is anything; the new commit's short id. */
 const commitAll = (plan: Plan, message: string): string | null => {
@@ -53,18 +47,35 @@ const captureInto = async (plan: Plan): Promise<number> => {
   pinEnv('AGENT_HOME', plan.to);
   pinEnv('AGENT_LOG_FILE', 'off');
   const { captureSession } = await import('@/knowledge/session-capture');
-  const results = await Promise.all(
-    plan.transcripts.map((transcriptPath) =>
-      captureSession({ transcriptPath, cwd: plan.from, sessionId: basename(transcriptPath, '.jsonl'), mode: 'session-end' })
-    )
+  // One at a time: captures share a lock that a waiting capture gives up on after a moment.
+  return plan.transcripts.reduce(
+    async (saved, transcriptPath) =>
+      (await saved) +
+      ((await captureSession({ transcriptPath, cwd: plan.from, sessionId: basename(transcriptPath, '.jsonl'), mode: 'session-end' }))
+        .saved
+        ? 1
+        : 0),
+    Promise.resolve(0)
   );
-  return results.filter((result) => result.saved).length;
 };
 
 export const applyMigration = async (plan: Plan, retire: boolean): Promise<ApplyResult> => {
   if (plan.blockers.length > 0) {
     throw new Error(`Nothing was copied:\n- ${plan.blockers.join('\n- ')}`);
   }
+  try {
+    return await copyAndRewrite(plan, retire);
+  } catch (cause) {
+    const leftovers = [plan.to, ...(plan.history ? [plan.history.to] : [])].filter((path) => existsSync(path));
+    throw new Error(
+      `The migration stopped partway and ${plan.from} is unchanged; ` +
+        `delete ${leftovers.join(' and ') || 'nothing'} and run it again.`,
+      { cause }
+    );
+  }
+};
+
+const copyAndRewrite = async (plan: Plan, retire: boolean): Promise<ApplyResult> => {
   mkdirSync(dirname(plan.to), { recursive: true });
   cpSync(plan.from, plan.to, { recursive: true, verbatimSymlinks: true, preserveTimestamps: true, errorOnExist: true });
 
@@ -102,7 +113,8 @@ export const applyMigration = async (plan: Plan, retire: boolean): Promise<Apply
   if (retire) {
     const versionPath = join(plan.from, RUNTIME_DIR, 'version.json');
     const version: unknown = JSON.parse(readFileSync(versionPath, 'utf-8'));
-    writeFileSync(versionPath, `${JSON.stringify({ ...(version as object), movedTo: plan.to }, null, 2)}\n`);
+    const recorded = typeof version === 'object' && version !== null ? version : {};
+    writeFileSync(versionPath, `${JSON.stringify({ ...recorded, movedTo: plan.to }, null, 2)}\n`);
   }
 
   return {

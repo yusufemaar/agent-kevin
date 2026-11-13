@@ -7,7 +7,7 @@ import { type PathMove, SOURCE, movePaths, productText } from './rules';
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type JsonObject = { [key: string]: Json };
 
-const isObject = (value: Json | undefined): value is JsonObject =>
+export const isObject = (value: Json | undefined): value is JsonObject =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /** Every string in a JSON value with the old home, checkout and history folder moved. */
@@ -41,7 +41,7 @@ const migrateGrants = (entries: Json): Json =>
 const renameKeys = (value: Json | undefined): Json | undefined =>
   isObject(value) ? Object.fromEntries(Object.entries(value).map(([key, item]) => [productText(key), item])) : value;
 
-const OLD_CLI = /bin[\\/]kevin\b/;
+const OLD_CLI = /bin[\\/]kevin(?![\w.-])/;
 
 /**
  * A Claude settings file or `.mcp.json` for the new plugin: grants and plugin keys renamed, the
@@ -91,7 +91,7 @@ export const leftovers = (value: Json, path = ''): string[] => {
   return [];
 };
 
-const CODEX_TABLE = new RegExp(`^\\[(?:mcp_servers|permissions)\\.${SOURCE.server}(?:\\..*)?\\]\\s*$`);
+const CODEX_TABLE = new RegExp(`^\\[(?:mcp_servers|permissions)\\.${SOURCE.server}(?:\\.[^\\]]*)?\\]\\s*(?:#.*)?$`);
 const ANY_TABLE = /^\s*\[/;
 const CODEX_DEFAULT = new RegExp(`^default_permissions\\s*=\\s*"${SOURCE.server}"\\s*$`);
 

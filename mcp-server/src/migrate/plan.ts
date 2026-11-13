@@ -9,7 +9,8 @@ import { FORMERLY_FIELD, NAME_FIELD, NAME_RE, agentNameIn, formerNamesIn } from 
 import { RUNTIME_DIR } from '@/shared/naming';
 import { canonicalPath, recordedGitDir } from '@/home/git-dir-record';
 import { type PathMove, type RuleContext, SOURCE, TARGET, migrateText, productText, taskAssignee } from './rules';
-import { type JsonObject, leftovers, migrateCodexConfig, migrateCodexHooks, migrateSettings } from './settings';
+import { isInside } from '@/shared/paths';
+import { type JsonObject, isObject, leftovers, migrateCodexConfig, migrateCodexHooks, migrateSettings } from './settings';
 
 export interface MigrateOptions {
   /** The home to move, and the folder it moves to (which must not exist yet). */
@@ -77,6 +78,7 @@ const CODEX_HOOKS = join('.codex', 'hooks.json');
 const CODEX_RULES = join('.codex', 'rules', `${SOURCE.server}.rules`);
 const TEMPLATE_BASE = join(RUNTIME_DIR, 'template-base');
 const MANUAL_TREES = [join('.claude', 'skills'), 'scripts'];
+const RELOCATED = ['AGENT_KNOWLEDGE', 'AGENT_PROJECTS', 'AGENT_REPORTS'];
 
 const lstat = (path: string) => lstatSync(path, { throwIfNoEntry: false });
 
@@ -152,12 +154,12 @@ const historyOf = (home: string, userHome: string): string | null => {
 };
 
 const historyDirty = (home: string, gitDir: string | null): boolean => {
-  const args = gitDir ? ['--git-dir', gitDir, '--work-tree', home] : ['-C', home];
   if (!gitDir && !lstat(join(home, '.git'))?.isDirectory()) {
     return false;
   }
+  const where = gitDir ? ['--git-dir', gitDir, '--work-tree', home] : ['-C', home];
   try {
-    return execFileSync('git', [...args, 'status', '--porcelain'], { encoding: 'utf8' }).trim() !== '';
+    return execFileSync('git', ['--no-optional-locks', ...where, 'status', '--porcelain'], { encoding: 'utf8' }).trim() !== '';
   } catch {
     return false;
   }
@@ -185,25 +187,26 @@ const oldCheckoutOf = (settings: (JsonObject | null)[]): string | null =>
     .find((path): path is string => path !== null) ?? null;
 
 /**
- * Transcripts Claude Code holds for the old home that its brain hasn't captured, or may have only in
- * part: unknown to the session index (by full id or the short id older captures used), or changed
- * after the day log of its last capture was written. Capture skips turns it already has.
+ * Transcripts Claude Code holds for the old home that capture should see. A session the index knows by
+ * its full id goes to capture, whose cursor keeps only turns the brain lacks. One it knows only by the
+ * short id older captures used, or one a day log already names, was captured whole before cursors
+ * existed, so capturing it again would write its turns twice; only a session found nowhere is new.
  */
-const uncaptured = (home: string, claudeProjects: string): string[] => {
+const transcriptsOf = (home: string, claudeProjects: string): string[] => {
   const folder = join(claudeProjects, home.replace(/[^A-Za-z0-9-]/g, '-'));
   if (!existsSync(folder)) {
     return [];
   }
   const sessionsDir = join(home, 'knowledge', 'raw', 'sessions');
-  const index = readJson(join(sessionsDir, 'index.json'));
-  const sessions = (index?.sessions ?? {}) as Record<string, { last_seen?: string }>;
+  const indexed = Object.keys((readJson(join(sessionsDir, 'index.json'))?.sessions as JsonObject | undefined) ?? {});
+  const logs = filesUnder(home, join('knowledge', 'raw', 'sessions'), () => false)
+    .map((rel) => textOf(join(home, rel)) ?? '')
+    .join('\n');
   return readdirSync(folder)
     .filter((name) => name.endsWith('.jsonl'))
     .filter((name) => {
       const id = name.slice(0, -'.jsonl'.length);
-      const seen = (sessions[id] ?? sessions[id.slice(0, 8)])?.last_seen;
-      const dayLog = seen ? lstat(join(sessionsDir, `${seen}.md`)) : undefined;
-      return !dayLog || lstatSync(join(folder, name)).mtimeMs > dayLog.mtimeMs + 1_000;
+      return indexed.includes(id) || (!indexed.includes(id.slice(0, 8)) && !logs.includes(`[${id.slice(0, 8)}`));
     })
     .map((name) => join(folder, name));
 };
@@ -240,6 +243,10 @@ export const planMigration = (options: MigrateOptions): Plan => {
   if (oldCheckout && newCheckout && readJson(join(newCheckout, '.claude-plugin', 'plugin.json'))?.name !== TARGET.plugin) {
     blockers.push(`${newCheckout} is not a ${TARGET.plugin} checkout; pass --checkout <path>`);
   }
+  settingsFiles
+    .flatMap(({ json }) => Object.entries(isObject(json?.env) ? json.env : {}))
+    .filter(([key, value]) => RELOCATED.includes(key) && typeof value === 'string' && value.trim() !== '')
+    .forEach(([key]) => blockers.push(`${key} keeps part of this home outside its folder, which a copy would miss; move it back first`));
   const oldHistory = historyOf(home, options.userHome);
   const newHistory = oldHistory ? join(options.stateRoot, TARGET.stateFolder, `${historyName(to, options.userHome)}.git`) : null;
   if (newHistory && existsSync(newHistory)) {
@@ -273,10 +280,8 @@ export const planMigration = (options: MigrateOptions): Plan => {
     leftovers: [],
     manual: []
   };
-  const count = (kind: string, changes: number): void => {
-    if (changes > 0) {
-      report.other[kind] = (report.other[kind] ?? 0) + changes;
-    }
+  const tally = (kind: string): void => {
+    report.other[kind] = (report.other[kind] ?? 0) + 1;
   };
 
   const tasks = new Set(taskFiles(home));
@@ -307,7 +312,7 @@ export const planMigration = (options: MigrateOptions): Plan => {
       } else if (/agentlayer(?![-\w@:_])/.test(change.after) && !/agentlayer(?![-\w@:_])/.test(change.before)) {
         report.product.push(change);
       } else {
-        count('paths, commands and tool names', 1);
+        tally('paths, commands and tool names');
       }
     });
     if (!rename || rename.from !== 'Kevin') {
@@ -342,9 +347,8 @@ export const planMigration = (options: MigrateOptions): Plan => {
             `$1 [\`${avatarRel}\`](${avatarRel})`
           )
         : withEmoji;
-    const others = edits.filter((edit) => edit.path !== path);
-    edits.length = 0;
-    edits.push(...others, { path, text: withAvatar });
+    const swept = edits.findIndex((edit) => edit.path === path);
+    edits.splice(swept === -1 ? edits.length : swept, 1, { path, text: withAvatar });
     report.agent = { name: rename?.to ?? current, formerly: rename ? formerly : formerNamesIn(identity), emoji: options.emoji, avatar: avatarRel };
   }
 
@@ -355,7 +359,7 @@ export const planMigration = (options: MigrateOptions): Plan => {
     const migrated = migrateSettings(json, paths, options.userHome);
     if (JSON.stringify(migrated) !== JSON.stringify(json)) {
       edits.push({ path: rel, text: `${JSON.stringify(migrated, null, 2)}\n` });
-      count('settings files', 1);
+      tally('settings files');
     }
     report.leftovers.push(...leftovers(migrated).map((entry) => `${posix(rel)} ${entry}`));
   });
@@ -363,9 +367,19 @@ export const planMigration = (options: MigrateOptions): Plan => {
   const codexConfig = existsSync(join(home, CODEX_CONFIG)) ? readFileSync(join(home, CODEX_CONFIG), 'utf-8') : null;
   if (codexConfig !== null) {
     const after = migrateCodexConfig(codexConfig, paths, options.userHome);
-    if (after !== codexConfig) {
+    const parses = ((): boolean => {
+      try {
+        Bun.TOML.parse(after);
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+    if (!parses) {
+      report.manual.push(`${posix(CODEX_CONFIG)}: remove the [mcp_servers.${SOURCE.server}] and [permissions.${SOURCE.server}] tables by hand`);
+    } else if (after !== codexConfig) {
       edits.push({ path: CODEX_CONFIG, text: after });
-      count('Codex files', 1);
+      tally('Codex files');
     }
   }
   const codexHooks = readJson(join(home, CODEX_HOOKS));
@@ -373,12 +387,14 @@ export const planMigration = (options: MigrateOptions): Plan => {
     const after = migrateCodexHooks(codexHooks);
     if (JSON.stringify(after) !== JSON.stringify(codexHooks)) {
       edits.push({ path: CODEX_HOOKS, text: `${JSON.stringify(after, null, 2)}\n` });
-      count('Codex files', 1);
+      tally('Codex files');
     }
   }
   const deletes = [
     ...(existsSync(join(home, CODEX_RULES)) ? [CODEX_RULES] : []),
-    ...(report.agent.avatar && oldAvatar && oldAvatar !== report.agent.avatar && existsSync(join(home, oldAvatar)) ? [oldAvatar] : [])
+    ...(report.agent.avatar && oldAvatar && oldAvatar !== report.agent.avatar && isInside(join(home, oldAvatar), home) && existsSync(join(home, oldAvatar))
+      ? [oldAvatar]
+      : [])
   ];
 
   filesUnder(home, TEMPLATE_BASE, () => false).forEach((rel) => {
@@ -386,7 +402,7 @@ export const planMigration = (options: MigrateOptions): Plan => {
     const after = before === null ? null : before.split('\n').map(productText).join('\n');
     if (before !== null && after !== null && after !== before) {
       edits.push({ path: rel, text: after });
-      count('template baseline files', 1);
+      tally('template baseline files');
     }
   });
 
@@ -408,6 +424,13 @@ export const planMigration = (options: MigrateOptions): Plan => {
     })
   );
 
+  const linked = [...edits.map((edit) => edit.path), ...deletes].filter((rel) =>
+    rel.split(sep).some((_, index, parts) => lstat(join(home, ...parts.slice(0, index + 1)))?.isSymbolicLink())
+  );
+  if (linked.length > 0) {
+    blockers.push(`migrate won't write through a symlink in the copy: ${linked.map(posix).join(', ')}`);
+  }
+
   return {
     from: home,
     to,
@@ -416,7 +439,7 @@ export const planMigration = (options: MigrateOptions): Plan => {
     deletes,
     copies: options.avatar && report.agent.avatar ? [{ from: options.avatar, to: report.agent.avatar }] : [],
     history: oldHistory && newHistory ? { from: oldHistory, to: newHistory } : null,
-    transcripts: uncaptured(home, options.claudeProjects),
+    transcripts: transcriptsOf(home, options.claudeProjects),
     report
   };
 };

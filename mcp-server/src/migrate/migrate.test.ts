@@ -234,12 +234,12 @@ describe('migrate keeps to the home it copies', () => {
     expect(readFileSync(join(gitDir, 'index')).equals(index)).toBe(true);
   });
 
-  test('a home whose knowledge resolves outside its folder is refused, and one inside it is not', () => {
+  test('a home that keeps its knowledge anywhere but its own knowledge folder is refused', () => {
     const { home, options } = fixture();
-    expect(planMigration({ ...options, roots: { ...options.roots, knowledge: '/elsewhere/knowledge' } }).blockers.join('\n')).toContain(
-      "this home's knowledge lives outside it (/elsewhere/knowledge)"
-    );
-    expect(planMigration({ ...options, roots: { ...options.roots, knowledge: join(home, 'knowledge') } }).blockers).toEqual([]);
+    const blockersFor = (knowledge: string): string => planMigration({ ...options, roots: { ...options.roots, knowledge } }).blockers.join('\n');
+    expect(blockersFor('/elsewhere/knowledge')).toContain('this home keeps its knowledge in /elsewhere/knowledge');
+    expect(blockersFor(join(home, 'brain'))).toContain(`this home keeps its knowledge in ${join(home, 'brain')}`);
+    expect(blockersFor(join(home, 'knowledge'))).toBe('');
   });
 
   test('a new folder inside the old home is refused before anything is written', () => {
@@ -254,6 +254,18 @@ describe('migrate keeps to the home it copies', () => {
     write(join(home, 'knowledge', 'raw', 'sessions', '2026-11-12.md'), '### Session (10:00) [eeee5555] · ~/Agents/Kevin\n\n**User:** resume [ffff6666 please\n');
     write(join(folder, 'ffff6666-quoted.jsonl'), '{}\n');
     expect(planMigration(options).transcripts).toEqual([join(folder, 'ffff6666-quoted.jsonl')]);
+  });
+
+  test('a Pre-Compact entry counts as a capture, and a heading quoted inside an entry does not', () => {
+    const { home, options } = fixture();
+    const folder = join(options.claudeProjects, home.replace(/[^A-Za-z0-9-]/g, '-'));
+    write(
+      join(home, 'knowledge', 'raw', 'sessions', '2026-05-21.md'),
+      '### Pre-Compact (10:00) [aaaa7777] · ~/Agents/Kevin\n\n**User:** hi\n\n```\n### Session (09:00) [bbbb8888] · ~/Agents/Kevin\n```\n'
+    );
+    write(join(folder, 'aaaa7777-compacted.jsonl'), '{}\n');
+    write(join(folder, 'bbbb8888-quoted.jsonl'), '{}\n');
+    expect(planMigration(options).transcripts).toEqual([join(folder, 'bbbb8888-quoted.jsonl')]);
   });
 
   test('a planned write through a symlink is refused', () => {

@@ -46,7 +46,7 @@ const captureInto = async (plan: Plan): Promise<number> => {
   }
   pinEnv('AGENT_HOME', plan.to);
   // The copy's own knowledge folder, whatever the old home's process inherited.
-  pinEnv('AGENT_KNOWLEDGE', join(plan.to, plan.knowledge));
+  pinEnv('AGENT_KNOWLEDGE', join(plan.to, 'knowledge'));
   pinEnv('AGENT_LOG_FILE', 'off');
   const { captureSession } = await import('@/knowledge/session-capture');
   // One at a time: captures share a lock that a waiting capture gives up on after a moment.

@@ -19,6 +19,8 @@ export interface Home {
   movedTo: string | null;
   install: 'dev' | 'marketplace';
   marketplace: string;
+  /** The checkout a dev install loads the plugin from; null for a marketplace install. */
+  checkout: string | null;
 }
 
 const readJson = (path: string): Record<string, unknown> | null => {
@@ -62,15 +64,17 @@ export const listHomes = (plugin: string, claudeDir: string, current?: string): 
       return [];
     }
     const identity = existsSync(join(home, 'IDENTITY.md')) ? readFileSync(join(home, 'IDENTITY.md'), 'utf-8') : '';
-    const source = (known[marketplace] as { source?: { source?: unknown } } | undefined)?.source?.source;
+    const source = (known[marketplace] as { source?: { source?: unknown; path?: unknown } } | undefined)?.source;
+    const dev = source?.source === 'directory';
     return [
       {
         home,
         name: NAME_FIELD.exec(identity)?.[1] || '',
         version: text(version.templateVersion),
         movedTo: text(version.movedTo),
-        install: source === 'directory' ? 'dev' : 'marketplace',
-        marketplace
+        install: dev ? 'dev' : 'marketplace',
+        marketplace,
+        checkout: dev ? text(source?.path) : null
       }
     ];
   });

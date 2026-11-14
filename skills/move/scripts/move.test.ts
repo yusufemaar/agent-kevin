@@ -47,9 +47,9 @@ describe('listHomes', () => {
 
   test('lists each home once, with its name, version, install and whether it moved', () => {
     expect(listHomes('agent-kevin', claudeDir)).toEqual([
-      { home: kevin, name: 'Kevin', version: '0.9.5', movedTo: null, install: 'dev', marketplace: 'agentdev-kevin' },
-      { home: scout, name: 'Scout', version: '0.9.3', movedTo: null, install: 'dev', marketplace: 'agentdev-kevin' },
-      { home: moved, name: 'Old', version: '0.9.5', movedTo: '/elsewhere/Oppi', install: 'marketplace', marketplace: 'agentlayer' }
+      { home: kevin, name: 'Kevin', version: '0.9.5', movedTo: null, install: 'dev', marketplace: 'agentdev-kevin', checkout: '/code/agent-kevin' },
+      { home: scout, name: 'Scout', version: '0.9.3', movedTo: null, install: 'dev', marketplace: 'agentdev-kevin', checkout: '/code/agent-kevin' },
+      { home: moved, name: 'Old', version: '0.9.5', movedTo: '/elsewhere/Oppi', install: 'marketplace', marketplace: 'agentlayer', checkout: null }
     ]);
   });
 
@@ -57,7 +57,7 @@ describe('listHomes', () => {
     const solo = home('Solo', { plugin: 'agent-kevin', templateVersion: '0.9.5' }, 'Kevin');
     write(join(solo, '.claude', 'settings.local.json'), JSON.stringify({ enabledPlugins: { 'agent-kevin@agentlayer': true } }));
     expect(listHomes('agent-kevin', join(root, 'nowhere'), solo)).toEqual([
-      { home: solo, name: 'Kevin', version: '0.9.5', movedTo: null, install: 'marketplace', marketplace: 'agentlayer' }
+      { home: solo, name: 'Kevin', version: '0.9.5', movedTo: null, install: 'marketplace', marketplace: 'agentlayer', checkout: null }
     ]);
     expect(listHomes('agent-kevin', claudeDir, kevin).map((entry) => entry.home)).toEqual([kevin, scout, moved]);
   });

@@ -17,7 +17,7 @@ The plugin root is `${CLAUDE_PLUGIN_ROOT}`. Write every command you hand over wi
 bun "${CLAUDE_PLUGIN_ROOT}/skills/move/scripts/homes.ts"
 ```
 
-Every home this plugin is installed for on this machine: `name`, `version`, `movedTo`, `install` (`dev` loads the plugin from a checkout, `marketplace` from the published catalog). Leave out homes with `movedTo` set (say where each went). Ask which to move with `AskUserQuestion` (`multiSelect`, label = agent name, description = folder). Test or probe folders appear too; the operator simply doesn't pick them.
+Every home this plugin is installed for on this machine, plus the one you're in: `name`, `version`, `movedTo`, `install` (`dev` loads the plugin from a `checkout`, `marketplace` from the published catalog). Leave out homes with `movedTo` set (say where each went). Ask which to move with `AskUserQuestion` (`multiSelect`, label = agent name, description = folder). Test or probe folders appear too; the operator simply doesn't pick them.
 
 A picked home whose `version` isn't `installed` must be upgraded first: tell the operator to open it and run `/agent-kevin:upgrade`, and carry on with the others.
 
@@ -67,7 +67,7 @@ Claude Code's old sessions can't be resumed from the new folder, but the brain h
 - **Kept lines:** each `path:line`, its text, and why.
 - **The command:** the exact final command (below).
 
-The tool returns the note's path. The new home's first session reads it to greet the operator and offer those sessions.
+The tool returns the note's absolute `path`: that, not `relPath`, goes in the final command, since the command runs from the home being moved. The new home's first session reads the note to greet the operator and offer those sessions.
 
 ## 6. Hand over, one home at a time
 
@@ -82,7 +82,7 @@ Then, per home, in order:
 1. **In that home:** `/agent-kevin:sync`, then close every session there. Closing saves each session's last turns to the brain.
 2. **In their own terminal** (not Claude Code): the command above. `--retire` marks the old home as moved, so its sessions say so and its sync stops committing.
 3. **Open the new folder** with Claude Code, accept the trust prompt, and install the new plugin there if `/plugin` doesn't list it yet, choosing the scope for this folder only (never the whole account, or it also loads in the old home):
-   - `install: dev`: `/plugin marketplace add <the agentlayer-agent checkout>` (the preview names it; clone it next to the old checkout if it's missing), then `/plugin install agentlayer@agentlayer-dev`.
+   - `install: dev`: the new plugin's checkout is `agentlayer-agent` in the same folder as the home's `checkout` (the preview blocks until it exists, so clone it there first, or pass `--checkout <path>` to the command). Then `/plugin marketplace add <that checkout>` and `/plugin install agentlayer@agentlayer-dev`.
    - `install: marketplace`: `/plugin install agentlayer@agentlayer`.
 4. **Exit and open the folder again.** A plugin's hooks start with a session, so the welcome comes on this second start: it finishes the move (the upgrade), greets the operator as the new agent, and offers the sessions to continue.
 5. **Point the rest at the new folder:** the Obsidian vault, terminal workspaces, and anything else opened from the old path.

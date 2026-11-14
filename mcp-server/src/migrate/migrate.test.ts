@@ -268,6 +268,14 @@ describe('migrate keeps to the home it copies', () => {
     expect(planMigration(options).transcripts).toEqual([join(folder, 'bbbb8888-quoted.jsonl')]);
   });
 
+  test('a line about the old mascot is kept as written and listed for the operator', () => {
+    const { home, options } = fixture();
+    write(join(home, 'SOUL.md'), 'You are Kevin.\nInspired by the minion Kevin, but calmer.\nKevin knows to Him belongs dominion.\n');
+    const plan = planMigration(options);
+    expect(plan.edits.find((edit) => edit.path === 'SOUL.md')?.text).toBe('You are Oppi.\nInspired by the minion Kevin, but calmer.\nOppi knows to Him belongs dominion.\n');
+    expect(plan.report.manual).toContain('SOUL.md:2: about the old mascot, kept as written for you to rewrite');
+  });
+
   test('a planned write through a symlink is refused', () => {
     const { home, user, options } = fixture();
     const shared = join(user, 'shared-settings.json');

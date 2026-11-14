@@ -75,6 +75,8 @@ const TREES = [join('.claude', 'rules'), 'knowledge', 'projects'];
 const DATED = [join('knowledge', 'raw'), join('projects', 'TASKS.md')];
 const DAILY = /^\d{4}-\d{2}-\d{2}\.md$/;
 const THREAD = /^## Thread[ \t]*$/m;
+/** A line about the mascot the old name came from: renaming it would only produce nonsense. */
+const MASCOT = /\bminions?\b/i;
 const SESSIONS = join('knowledge', 'raw', 'sessions');
 /** The heading a day-log entry opens with, and the first eight characters of its session's id. */
 const ENTRY_ID = /^### (?:Session|Pre-Compact) \([^)]*\) \[([0-9a-f]{8})/m;
@@ -301,12 +303,14 @@ export const planMigration = (options: MigrateOptions): Plan => {
       report.manual.push(`${posix(rel)}: not UTF-8, left as written`);
       return;
     }
-    const keep = keepBy(rel);
     const inScope = markdown.includes(rel);
     // A task's thread is its dated log, kept as written like the other dated records.
     const thread = tasks.has(rel) ? before.search(THREAD) : -1;
     const head = thread === -1 ? before : before.slice(0, thread);
     const tail = thread === -1 ? '' : before.slice(thread);
+    const mascot = inScope ? head.split('\n').flatMap((line, index) => (MASCOT.test(line) ? [index + 1] : [])) : [];
+    report.manual.push(...mascot.map((line) => `${posix(rel)}:${line}: about the old mascot, kept as written for you to rewrite`));
+    const keep = new Set([...keepBy(rel), ...mascot]);
     const plain = inScope ? migrateText(head, { ...context, rename: undefined }, options.userHome, keep) + tail : before;
     const renamed = inScope && rename ? migrateText(head, context, options.userHome, keep) + tail : plain;
     const after = tasks.has(rel) ? taskAssignee(renamed) : renamed;

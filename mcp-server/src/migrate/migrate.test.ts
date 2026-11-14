@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { applyMigration } from './apply';
+import { runMigrate } from './cli';
 import { type MigrateOptions, planMigration } from './plan';
 
 const roots: string[] = [];
@@ -130,8 +131,9 @@ describe('migrate', () => {
     expect(JSON.parse(read('.state/version.json'))).toEqual({
       plugin: 'agentlayer',
       templateVersion: '9.9.9',
-      migratedFrom: { plugin: 'agent-kevin', home }
+      migratedFrom: { plugin: 'agent-kevin', home, name: 'Kevin', at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) }
     });
+    expect(JSON.parse(read('.state/cadence.json'))).toEqual({ welcome: 'pending' });
 
     expect(result.history).toBe(join(options.stateRoot, 'agentlayer', 'Agents-Oppi.git'));
     const log = (dir: string, ...args: string[]) => execFileSync('git', ['--git-dir', dir, ...args], { encoding: 'utf8' }).trim();
@@ -225,6 +227,15 @@ describe('migrate that stops partway', () => {
   });
 });
 
+describe('migrate on the command line', () => {
+  test('an argument it does not know stops it before anything is read, so a typo never drops a keep', async () => {
+    const { home } = fixture();
+    const run = (...argv: string[]) => runMigrate(argv, home, '9.9.9', home);
+    expect(await run('--to', '/tmp/new', '--keep', 'a.md:1', 'b.md:2')).toBe(1);
+    expect(await run('--to', '/tmp/new', '--kep', 'a.md:1')).toBe(1);
+  });
+});
+
 describe('migrate keeps to the home it copies', () => {
   test('a dry run leaves the old history index byte for byte', () => {
     const { home, gitDir, options } = fixture();
@@ -268,6 +279,15 @@ describe('migrate keeps to the home it copies', () => {
     expect(planMigration(options).transcripts).toEqual([join(folder, 'bbbb8888-quoted.jsonl')]);
   });
 
+  test('a bare path keeps the whole file as written, while its task assignee still moves', () => {
+    const { home, options } = fixture();
+    write(join(home, 'projects', 'p', 'tasks', 'p-002-the-move.md'), '---\nid: p-002\nassignee: [kevin]\n---\nMoving from Kevin to Oppi with /agent-kevin:sync.\n');
+    const plan = planMigration({ ...options, keep: ['projects/p/tasks/p-002-the-move.md'] });
+    expect(plan.edits.find((edit) => edit.path === 'projects/p/tasks/p-002-the-move.md')?.text).toBe(
+      '---\nid: p-002\nassignee: [agent]\n---\nMoving from Kevin to Oppi with /agent-kevin:sync.\n'
+    );
+  });
+
   test('a line about the old mascot is kept as written and listed for the operator', () => {
     const { home, options } = fixture();
     write(join(home, 'SOUL.md'), 'You are Kevin.\nInspired by the minion Kevin, but calmer.\nKevin knows to Him belongs dominion.\n');
@@ -282,6 +302,30 @@ describe('migrate keeps to the home it copies', () => {
     write(shared, JSON.stringify({ permissions: { allow: ['Skill(agent-kevin:sync)'] } }));
     symlinkSync(shared, join(home, '.claude', 'settings.json'));
     expect(planMigration(options).blockers.join('\n')).toContain("won't write through a symlink in the copy: .claude/settings.json");
+  });
+
+  test('the copy records where it came from and greets its first session with the move note', async () => {
+    const { home, user, gitDir, options } = fixture();
+    const note = join(user, 'Agents', 'Elsewhere', 'reports', 'plans', '2026-11-14-move.md');
+    write(note, '# Move\n\nSessions to continue: aaaa1111\n');
+    write(join(home, '.state', 'cadence.json'), JSON.stringify({ sync: '2026-11-13', welcome: '2026-06-20' }));
+    execFileSync('git', ['--git-dir', gitDir, '--work-tree', home, 'add', '-A']);
+    execFileSync('git', ['--git-dir', gitDir, '--work-tree', home, 'commit', '-q', '-m', 'Sync: cadence']);
+    const result = await applyMigration(planMigration({ ...options, welcome: note }), false);
+    const version = JSON.parse(readFileSync(join(result.home, '.state', 'version.json'), 'utf-8'));
+    expect(version.migratedFrom).toMatchObject({ plugin: 'agent-kevin', home, name: 'Kevin', note: 'reports/plans/2026-11-14-move.md' });
+    expect(readFileSync(join(result.home, 'reports', 'plans', '2026-11-14-move.md'), 'utf-8')).toContain('aaaa1111');
+    expect(JSON.parse(readFileSync(join(result.home, '.state', 'cadence.json'), 'utf-8'))).toEqual({ sync: '2026-11-13', welcome: 'pending' });
+    expect(JSON.parse(readFileSync(join(home, '.state', 'cadence.json'), 'utf-8')).welcome).toBe('2026-06-20');
+  });
+
+  test("a move note inside the home is recorded where it already is, and a missing one blocks", () => {
+    const { home, options } = fixture();
+    write(join(home, 'reports', 'plans', 'move.md'), '# Move\n');
+    const plan = planMigration({ ...options, welcome: join(home, 'reports', 'plans', 'move.md') });
+    expect(plan.copies.map((copy) => copy.to)).not.toContain('reports/plans/move.md');
+    expect(plan.edits.find((edit) => edit.path === '.state/version.json')?.text).toContain('"note": "reports/plans/move.md"');
+    expect(planMigration({ ...options, welcome: join(home, 'nowhere.md') }).blockers.join('\n')).toContain('is not a file');
   });
 
   test('a replaced avatar outside the home is never deleted', () => {

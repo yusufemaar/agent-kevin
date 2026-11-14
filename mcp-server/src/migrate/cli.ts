@@ -10,9 +10,28 @@ import { applyMigration } from './apply';
 import { planMigration } from './plan';
 
 const USAGE =
-  'Usage: migrate --to <new folder> [--name <Name>] [--emoji <emoji>] [--avatar <image>] [--keep <path>:<line>]... [--checkout <agentlayer checkout>] [--apply [--retire]]';
+  'Usage: migrate --to <new folder> [--name <Name>] [--emoji <emoji>] [--avatar <image>] [--welcome <move note>] [--keep <path>[:<line>]]... [--checkout <agentlayer checkout>] [--apply [--retire]]';
+
+const VALUE_FLAGS = ['to', 'name', 'emoji', 'avatar', 'welcome', 'keep', 'checkout'];
+const SWITCHES = ['apply', 'retire'];
+
+/** The first argument that is neither a known flag nor a flag's value: a typo would otherwise drop it silently. */
+const strayArgument = (argv: string[]): string | undefined =>
+  argv.find((arg, index) => {
+    const flag = arg.startsWith('--') ? arg.slice(2).split('=')[0] : undefined;
+    if (flag !== undefined) {
+      return !VALUE_FLAGS.includes(flag) && !SWITCHES.includes(flag);
+    }
+    const previous = argv[index - 1];
+    return !(previous?.startsWith('--') && !previous.includes('=') && VALUE_FLAGS.includes(previous.slice(2)));
+  });
 
 export const runMigrate = async (argv: string[], home: string, pluginVersion: string, pluginRoot: string): Promise<number> => {
+  const stray = strayArgument(argv);
+  if (stray !== undefined) {
+    console.error(`migrate doesn't know "${stray}"; nothing was read or written.\n${USAGE}`);
+    return 1;
+  }
   const value = (name: string): string | undefined => {
     const inline = argv.find((arg) => arg.startsWith(`--${name}=`));
     if (inline) {
@@ -45,6 +64,7 @@ export const runMigrate = async (argv: string[], home: string, pluginVersion: st
     name: value('name'),
     emoji: value('emoji'),
     avatar: path(value('avatar')),
+    welcome: path(value('welcome')),
     keep: values('keep'),
     checkout: path(value('checkout')),
     sourceCheckout: existsSync(join(pluginRoot, '.git')) ? pluginRoot : undefined,

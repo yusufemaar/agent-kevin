@@ -103,7 +103,10 @@ const copyAndRewrite = async (plan: Plan, retire: boolean): Promise<ApplyResult>
     mkdirSync(dirname(join(plan.to, path)), { recursive: true });
     writeFileSync(join(plan.to, path), text);
   });
-  plan.copies.forEach(({ from, to }) => copyFileSync(from, join(plan.to, to)));
+  plan.copies.forEach(({ from, to }) => {
+    mkdirSync(dirname(join(plan.to, to)), { recursive: true });
+    copyFileSync(from, join(plan.to, to));
+  });
   plan.deletes.forEach((path) => rmSync(join(plan.to, path), { force: true }));
   if (tracked) {
     const id = commitAll(plan, 'Moved from agent-kevin');

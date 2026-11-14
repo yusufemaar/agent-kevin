@@ -7,6 +7,7 @@ import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, dirname, extname, join, relative, sep } from 'node:path';
 import { FORMERLY_FIELD, NAME_FIELD, NAME_RE, agentNameIn, formerNamesIn } from '@/shared/agent-name';
 import { RUNTIME_DIR } from '@/shared/naming';
+import { todayDate } from '@/shared/date';
 import { ENTRY_SPLIT_RE } from '@/knowledge/session-format';
 import { canonicalPath, recordedGitDir } from '@/home/git-dir-record';
 import { type PathMove, type RuleContext, SOURCE, TARGET, migrateText, productText, taskAssignee } from './rules';
@@ -17,11 +18,13 @@ export interface MigrateOptions {
   /** The home to move, and the folder it moves to (which must not exist yet). */
   home: string;
   to: string;
+  /** The note the new home's first session greets with (sessions to continue, the keep list), copied in when it lives elsewhere. */
+  welcome?: string;
   /** The agent's new name, emoji and avatar image; each kept when absent. */
   name?: string;
   emoji?: string;
   avatar?: string;
-  /** `path:line` entries the rename leaves as written: a person or product that shares the name. */
+  /** What the rename leaves as written: `path:line` for a person or product that shares the name, `path` for a whole file. */
   keep: string[];
   userHome: string;
   /** This plugin's version: the home must be upgraded to it first. */
@@ -85,6 +88,7 @@ const CODEX_CONFIG = join('.codex', 'config.toml');
 const CODEX_HOOKS = join('.codex', 'hooks.json');
 const CODEX_RULES = join('.codex', 'rules', `${SOURCE.server}.rules`);
 const TEMPLATE_BASE = join(RUNTIME_DIR, 'template-base');
+const CADENCE = join(RUNTIME_DIR, 'cadence.json');
 const MANUAL_TREES = [join('.claude', 'skills'), 'scripts'];
 
 const lstat = (path: string) => lstatSync(path, { throwIfNoEntry: false });
@@ -240,6 +244,9 @@ export const planMigration = (options: MigrateOptions): Plan => {
   if (options.avatar !== undefined && !lstat(options.avatar)?.isFile()) {
     blockers.push(`--avatar ${options.avatar} is not a file`);
   }
+  if (options.welcome !== undefined && !lstat(options.welcome)?.isFile()) {
+    blockers.push(`--welcome ${options.welcome} is not a file`);
+  }
 
   const identity = existsSync(join(home, IDENTITY)) ? (textOf(join(home, IDENTITY)) ?? '') : '';
   const current = agentNameIn(identity);
@@ -277,7 +284,7 @@ export const planMigration = (options: MigrateOptions): Plan => {
   const keepBy = (rel: string): Set<number> =>
     new Set(
       options.keep
-        .filter((entry) => entry.slice(0, entry.lastIndexOf(':')) === posix(rel))
+        .filter((entry) => /:\d+$/.test(entry) && entry.slice(0, entry.lastIndexOf(':')) === posix(rel))
         .map((entry) => Number(entry.slice(entry.lastIndexOf(':') + 1)))
     );
 
@@ -303,7 +310,8 @@ export const planMigration = (options: MigrateOptions): Plan => {
       report.manual.push(`${posix(rel)}: not UTF-8, left as written`);
       return;
     }
-    const inScope = markdown.includes(rel);
+    // A bare path keeps the whole file: a document about the old agent's past, or about the move itself.
+    const inScope = markdown.includes(rel) && !options.keep.includes(posix(rel));
     // A task's thread is its dated log, kept as written like the other dated records.
     const thread = tasks.has(rel) ? before.search(THREAD) : -1;
     const head = thread === -1 ? before : before.slice(0, thread);
@@ -419,12 +427,22 @@ export const planMigration = (options: MigrateOptions): Plan => {
     }
   });
 
+  // A note already inside the home moves with it; one from elsewhere (another home's move) is copied in.
+  const welcomeFrom = options.welcome === undefined ? undefined : canonicalPath(options.welcome);
+  const noteInside = welcomeFrom !== undefined && isInside(welcomeFrom, home);
+  const note = welcomeFrom === undefined ? undefined : noteInside ? relative(home, welcomeFrom) : join('reports', 'plans', basename(welcomeFrom));
   if (version) {
+    const migratedFrom = { plugin: SOURCE.plugin, home, name: current, at: todayDate(), ...(note ? { note: posix(note) } : {}) };
     edits.push({
       path: join(RUNTIME_DIR, 'version.json'),
-      text: `${JSON.stringify({ ...version, plugin: TARGET.plugin, migratedFrom: { plugin: SOURCE.plugin, home } }, null, 2)}\n`
+      text: `${JSON.stringify({ ...version, plugin: TARGET.plugin, migratedFrom }, null, 2)}\n`
     });
   }
+  // The new plugin's first session in the copy greets it as a moved home.
+  edits.push({
+    path: CADENCE,
+    text: `${JSON.stringify({ ...(readJson(join(home, CADENCE)) ?? {}), welcome: 'pending' }, null, 2)}\n`
+  });
 
   MANUAL_TREES.forEach((tree) =>
     filesUnder(home, tree, () => false, false).forEach((rel) => {
@@ -441,6 +459,7 @@ export const planMigration = (options: MigrateOptions): Plan => {
     ...edits.map((edit) => edit.path),
     ...deletes,
     ...(report.agent.avatar ? [report.agent.avatar] : []),
+    ...(note && !noteInside ? [note] : []),
     SESSIONS
   ];
   const linked = written.filter((rel) =>
@@ -456,7 +475,10 @@ export const planMigration = (options: MigrateOptions): Plan => {
     blockers,
     edits,
     deletes,
-    copies: options.avatar && report.agent.avatar ? [{ from: options.avatar, to: report.agent.avatar }] : [],
+    copies: [
+      ...(options.avatar && report.agent.avatar ? [{ from: options.avatar, to: report.agent.avatar }] : []),
+      ...(welcomeFrom && note && !noteInside ? [{ from: welcomeFrom, to: note }] : [])
+    ],
     history: oldHistory && newHistory ? { from: oldHistory, to: newHistory } : null,
     transcripts: transcriptsOf(home, options.claudeProjects),
     report

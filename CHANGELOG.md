@@ -43,6 +43,19 @@ and prompts per optional one. The new template files are the source of truth for
 
 <!-- Add new releases below this line, newest first. -->
 
+## [0.9.5] - 2026-11-15
+
+### Added
+- **`/agent-kevin:move` moves your homes to agentlayer, the plugin that replaces this one.** It finds every home this plugin is installed for on the machine, lets you pick one or several, and for each one asks for the new name and folder (Oppi for an agent named Kevin), previews the move, reviews which renamed lines really mean someone else (another person, another team's agent, a dated attribution) and keeps those as written, lists the sessions to continue in the new home, saves a move note, and hands over the exact command to run in your own terminal. Nothing is moved or deleted until you run it. Slash-only.
+- **`kevin migrate --to <folder>` copies a home for agentlayer and changes only the copy.** A dry run by default; `--apply` writes the new folder, rewrites plugin names, tool grants and the agent's name in it, gives it its own copy of the home's history, and captures any session the brain doesn't hold yet, once. `--keep <path>[:<line>]` leaves a line or a whole file as written, `--welcome <note>` carries the move note so the new home's first session greets you and offers the sessions to continue, and `--retire` marks the old home as moved. It refuses to run from outside the home it moves, a home that keeps its knowledge, projects or reports outside their own folders, a write through a symlink, a target inside the old home, and any argument it doesn't know. Apart from that mark, the old home is only read: not even the CLI log is written there.
+- **Sync and the banner offer the move** until the home has moved: a quiet, snoozable banner hint (after a new home's first welcome) and one line in sync's output once the home is up to date.
+
+### Changed
+- **A moved home says where it went.** After `--retire`, every session there opens with the new folder before anything else, and sync stops at its first brain commit (`SKIPPED_MOVED`) instead of compiling into a brain that is no longer used. Deleting `movedTo` from `.state/version.json` undoes it.
+
+### Upgrade
+None — code-only, no bun install or HOME changes.
+
 ## [0.9.4] - 2026-11-13
 
 ### Changed

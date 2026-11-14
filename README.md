@@ -29,7 +29,7 @@ Kevin is a portable, file-based personal AI assistant that plugs into the agent 
 It is not a chat wrapper. It is an operating system for personal AI:
 
 - A **59-tool MCP server** for tasks, knowledge compilation, reports, home history, worktrees, database queries, GitHub review, search, page speed, a bundled browser, and Google Search Console.
-- A **33-skill library**, related work grouped into one skill with playbooks (briefing, goals, SEO, attention, engineering), covering onboarding, version history, project lifecycle, a daily attention view with standup and a session radar, goals from the day to the year, morning and evening briefings, tax deadlines and bookkeeping, a support queue pulse and reply drafts, trip planning, worktree setup, API-request drafting, read-only SEO auditing, and audio and video transcripts and summaries.
+- A **34-skill library**, related work grouped into one skill with playbooks (briefing, goals, SEO, attention, engineering), covering onboarding, version history, project lifecycle, a daily attention view with standup and a session radar, goals from the day to the year, morning and evening briefings, tax deadlines and bookkeeping, a support queue pulse and reply drafts, trip planning, worktree setup, API-request drafting, read-only SEO auditing, and audio and video transcripts and summaries.
 - A **knowledge pipeline** that turns every conversation into structured, queryable memory.
 - **Opt-in packs** (SEO, Browser, Database, GitHub, API, Xcode, Helpdesk, App Store, Slack) and a bridge to community skill libraries via [skills.sh](https://skills.sh).
 - **You drive.** Ask in plain words and Kevin picks the skill and playbook; nothing runs unasked, and you never have to remember a command.

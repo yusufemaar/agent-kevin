@@ -234,6 +234,20 @@ describe('migrate on the command line', () => {
     expect(await run('--to', '/tmp/new', '--keep', 'a.md:1', 'b.md:2')).toBe(1);
     expect(await run('--to', '/tmp/new', '--kep', 'a.md:1')).toBe(1);
   });
+
+  test('a home other than the folder it runs from is refused, so an inherited AGENT_HOME never moves the wrong one', async () => {
+    const { home, options } = fixture();
+    expect(await runMigrate(['--to', options.to], home, '9.9.9', home)).toBe(1);
+    expect(existsSync(options.to)).toBe(false);
+  });
+
+  test('a move note that would overwrite a file of the same name is refused', () => {
+    const { home, user, options } = fixture();
+    const note = join(user, 'notes', 'move.md');
+    write(note, '# Move\n');
+    write(join(home, 'reports', 'plans', 'move.md'), 'an older report\n');
+    expect(planMigration({ ...options, welcome: note }).blockers.join('\n')).toContain('would overwrite reports/plans/move.md');
+  });
 });
 
 describe('migrate keeps to the home it copies', () => {

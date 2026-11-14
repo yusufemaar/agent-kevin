@@ -6,6 +6,8 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { FOLDERS } from '@/config';
+import { canonicalPath } from '@/home/git-dir-record';
+import { isInside } from '@/shared/paths';
 import { applyMigration } from './apply';
 import { planMigration } from './plan';
 
@@ -30,6 +32,11 @@ export const runMigrate = async (argv: string[], home: string, pluginVersion: st
   const stray = strayArgument(argv);
   if (stray !== undefined) {
     console.error(`migrate doesn't know "${stray}"; nothing was read or written.\n${USAGE}`);
+    return 1;
+  }
+  // The home that moves is the one you stand in: an AGENT_HOME from elsewhere would move the wrong home.
+  if (!isInside(canonicalPath(process.cwd()), canonicalPath(home))) {
+    console.error(`migrate runs from inside the home it moves, but this folder resolves to ${home}. Unset AGENT_HOME, or cd into ${home}.`);
     return 1;
   }
   const value = (name: string): string | undefined => {

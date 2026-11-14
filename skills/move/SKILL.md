@@ -32,13 +32,13 @@ Oppi gets `--emoji 🐙 --avatar "${CLAUDE_PLUGIN_ROOT}/assets/oppi-avatar.png"`
 
 ## 3. Per home: preview and keep review
 
-Run the preview from that home's folder. It writes nothing anywhere:
+Run the preview from that home's folder, with the session's own `AGENT_*` paths cleared so the home's settings decide them (`migrate` refuses a home other than the folder it runs from). It writes nothing anywhere:
 
 ```bash
-P=$(mktemp "${TMPDIR:-/tmp}/move-preview-XXXXXX") && ( cd "<home>" && bun "${CLAUDE_PLUGIN_ROOT}/bin/kevin" migrate --to "<new folder>" --name "<new name>" <emoji and avatar flags> ) > "$P"; bun "${CLAUDE_PLUGIN_ROOT}/skills/move/scripts/keep-candidates.ts" "$P"
+P=$(mktemp "${TMPDIR:-/tmp}/move-preview-XXXXXX") && ( cd "<home>" && env -u AGENT_HOME -u AGENT_KNOWLEDGE -u AGENT_PROJECTS -u AGENT_REPORTS bun "${CLAUDE_PLUGIN_ROOT}/bin/kevin" migrate --to "<new folder>" --name "<new name>" <emoji and avatar flags> ) > "$P"; bun "${CLAUDE_PLUGIN_ROOT}/skills/move/scripts/keep-candidates.ts" "$P"
 ```
 
-It prints the blockers, every line the rename would change (`path:line | text`), lines left as written for review, and lines kept for the operator to rewrite.
+It prints the blockers, every line the rename would change (`path:line | text`), lines left as written for review, and lines kept for the operator to rewrite. The preview's own JSON (`$P`) also names the new history folder (`history.to`): keep it for the move note.
 
 **Read every renamed line for meaning.** The rename is right when the old name means this agent or this plugin. It is wrong, and the line needs `--keep <path>:<line>`, when the old name is:
 
@@ -62,7 +62,7 @@ Claude Code's old sessions can't be resumed from the new folder, but the brain h
 
 `report_write` with `category: plans`, `skill: move`, title `Move <old name> → <new name>`, here in the current home (never write into another home). The body:
 
-- **From → to:** the old folder and the new one, the old and new name.
+- **From → to:** the old folder and the new one, the old and new name, and the new history folder (`history.to` from the preview).
 - **Sessions to continue:** a table of session id, what it was doing, next step.
 - **Kept lines:** each `path:line`, its text, and why.
 - **The command:** the exact final command (below).
@@ -74,21 +74,21 @@ The tool returns the note's path. The new home's first session reads it to greet
 The final command for each home, with every path absolute, written in full:
 
 ```
-cd "<home>" && bun "${CLAUDE_PLUGIN_ROOT}/bin/kevin" migrate --to "<new folder>" --name "<new name>" <emoji and avatar flags> <--keep flags> --welcome "<move note path>" --apply --retire
+cd "<home>" && env -u AGENT_HOME -u AGENT_KNOWLEDGE -u AGENT_PROJECTS -u AGENT_REPORTS bun "${CLAUDE_PLUGIN_ROOT}/bin/kevin" migrate --to "<new folder>" --name "<new name>" <emoji and avatar flags> <--keep flags> --welcome "<move note path>" --apply --retire
 ```
 
 Then, per home, in order:
 
 1. **In that home:** `/agent-kevin:sync`, then close every session there. Closing saves each session's last turns to the brain.
 2. **In their own terminal** (not Claude Code): the command above. `--retire` marks the old home as moved, so its sessions say so and its sync stops committing.
-3. **Install the new plugin for the new folder only**, then open it:
+3. **Open the new folder** with Claude Code, accept the trust prompt, and install the new plugin there if `/plugin` doesn't list it yet, choosing the scope for this folder only (never the whole account, or it also loads in the old home):
    - `install: dev`: `/plugin marketplace add <the agentlayer-agent checkout>` (the preview names it; clone it next to the old checkout if it's missing), then `/plugin install agentlayer@agentlayer-dev`.
    - `install: marketplace`: `/plugin install agentlayer@agentlayer`.
-   - Choose the scope for this folder only, never the whole account, or the new plugin also loads in the old home.
-4. **Open the new folder.** Its first session greets the operator as the new agent, offers the sessions to continue, and runs `/agentlayer:upgrade`.
+4. **Exit and open the folder again.** A plugin's hooks start with a session, so the welcome comes on this second start: it finishes the move (the upgrade), greets the operator as the new agent, and offers the sessions to continue.
+5. **Point the rest at the new folder:** the Obsidian vault, terminal workspaces, and anything else opened from the old path.
 
 Say also:
 
 - **Going back:** delete the `"movedTo"` line from the old home's `.state/version.json`.
-- **Starting over:** delete the new folder and its history (`~/.local/state/agentlayer/<folder name>.git`), remove `"movedTo"`, and run this skill again. Anything done in the new home since the move is lost.
+- **Starting over:** delete the new folder and the history folder the move note names, remove `"movedTo"`, and run this skill again. Anything done in the new home since the move is lost, so most problems are better fixed in the new home.
 - **Helpdesk and Slack routines:** run them from one home only, since the copy holds the same credentials.

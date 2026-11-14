@@ -431,6 +431,9 @@ export const planMigration = (options: MigrateOptions): Plan => {
   const welcomeFrom = options.welcome === undefined ? undefined : canonicalPath(options.welcome);
   const noteInside = welcomeFrom !== undefined && isInside(welcomeFrom, home);
   const note = welcomeFrom === undefined ? undefined : noteInside ? relative(home, welcomeFrom) : join('reports', 'plans', basename(welcomeFrom));
+  if (note && !noteInside && existsSync(join(home, note))) {
+    blockers.push(`--welcome would overwrite ${posix(note)}, which this home already has; rename the note`);
+  }
   if (version) {
     const migratedFrom = { plugin: SOURCE.plugin, home, name: current, at: todayDate(), ...(note ? { note: posix(note) } : {}) };
     edits.push({

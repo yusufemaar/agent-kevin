@@ -53,6 +53,15 @@ describe('listHomes', () => {
     ]);
   });
 
+  test('the home it runs from is listed even when its install is for the whole account', () => {
+    const solo = home('Solo', { plugin: 'agent-kevin', templateVersion: '0.9.5' }, 'Kevin');
+    write(join(solo, '.claude', 'settings.local.json'), JSON.stringify({ enabledPlugins: { 'agent-kevin@agentlayer': true } }));
+    expect(listHomes('agent-kevin', join(root, 'nowhere'), solo)).toEqual([
+      { home: solo, name: 'Kevin', version: '0.9.5', movedTo: null, install: 'marketplace', marketplace: 'agentlayer' }
+    ]);
+    expect(listHomes('agent-kevin', claudeDir, kevin).map((entry) => entry.home)).toEqual([kevin, scout, moved]);
+  });
+
   test('a machine with no registry has no homes', () => {
     expect(listHomes('agent-kevin', join(root, 'nowhere'))).toEqual([]);
   });

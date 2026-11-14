@@ -3,7 +3,7 @@ import { getStatus } from '@/knowledge/compile';
 import { readCadence } from '@/shared/cadence';
 import { daysBetween, todayDate } from '@/shared/date';
 import { countOf } from '@/shared/utils';
-import { getUpgradeStatus } from '@/version';
+import { getUpgradeStatus, readMovedTo } from '@/version';
 import type { NoticeLedger } from './ledger';
 import { readLedger } from './ledger';
 
@@ -126,8 +126,24 @@ const syncNotice: NoticeSource = async () => {
   };
 };
 
+/** The way to the new plugin, offered quietly until the home has moved; a fresh home's welcome comes first. */
+const moveNotice: NoticeSource = async () =>
+  readMovedTo() !== null || readCadence().welcome === 'pending'
+    ? null
+    : {
+        id: 'move',
+        level: 'hint',
+        pinned: false,
+        icon: '→',
+        label: 'Move',
+        title: 'agentlayer is ready',
+        facts: [],
+        command: `${PLUGIN_NAME}:move`,
+        actionLabel: 'Move when ready'
+      };
+
 // The order is the priority. Upgrade leads because it ends in a sync, or asks for one after a restart.
-const SOURCES: readonly NoticeSource[] = [upgradeNotice, syncNotice];
+const SOURCES: readonly NoticeSource[] = [upgradeNotice, syncNotice, moveNotice];
 
 /**
  * Hides a notice snoozed through today and drops an unpinned one a level once it has been

@@ -168,6 +168,8 @@ Interpret (mirrors the upgrade skill's guards, nudge-only — no semver math nee
 - **`baseline == installed`** → current; say nothing.
 - **`baseline != installed`** → surface `Plugin vINSTALLED installed · home migrated to vBASELINE — run /upgrade`.
 
+**Also offer the move to agentlayer**, the plugin that replaces this one. When `$DATA_DIR/version.json` has no `"movedTo"` and the upgrade check above says current, surface one `→ Move` line and offer it in the closing interview. A home that has moved never gets here: its session start says where it went.
+
 **Also check planning + review cadence.** The calendar cadences (the goals skill's week, month and year playbooks, and self-review) are interactive interviews the operator runs with Kevin, never unattended. Sync's job here is to **notice when one is due and surface the nudge**, same as it does for a pending plugin upgrade; the closing interview (step 13) offers to run it. This step is read-only detection:
 
 ```bash
@@ -312,6 +314,8 @@ Apply the stalled-task answers first, so nothing below can skip them. Then honor
 
 **Cadence and upgrade picks:** a due goals cadence picked with **Act now** runs through the Skill tool (`agent-kevin:goals` with the rest of `invoke` as its argument, e.g. `week interview`), a due `roadmap` runs `agent-kevin:roadmap` the same way, and **Queue as tasks** files it like any other pick. A tax close needs the operator's documents, a helpdesk routine (the reviews check included) reads untrusted ticket or review text, and `upgrade` chains sync itself, so sync invoking it would recurse: for those three, both answers collapse to the same thing — surface the exact slash command for the operator to type.
 
+**The move pick:** hand back `/agent-kevin:move` to run as its own step, whichever answer: it asks about every home on the machine and ends in commands for the operator's terminal, so it never runs inside sync.
+
 **The GitHub sweep pick:** **Act now** runs the engineer skill through the Skill tool (`agent-kevin:engineer` with `sweep`), which drafts the replies and posts nothing; **Queue as tasks** files it like any other pick.
 
 **The Slack channels pick:** **Act now** runs the slack skill through the Skill tool (`agent-kevin:slack` with `sort new channels`), whose diff-and-extend files each unmapped channel into its section of `slack-channels.md` and reads no message text; **Queue as tasks** files it like any other pick.
@@ -370,6 +374,9 @@ One block, tight. Skip empty sections — don't pad.
 📅 Cadence (only when something is due — omit entirely when the cadence check returns [])
   - <label> due (last set <lastRun | never>) → /<invoke>
 
+→ Move (until this home has moved, and only once it is up to date)
+  - agentlayer is ready: /agent-kevin:move walks you through it, for every home on this machine
+
 ⬆️ Upgrade (only when drift detected — omit entirely when up to date)
   - <Plugin vINSTALLED installed · home migrated to vBASELINE — run /upgrade>
   - <or: Run /upgrade to enable update tracking>
@@ -386,6 +393,8 @@ If everything is clean: a one-liner is the right output.
 ```
 ✅ Sync complete — wiki healthy, <N> active tasks, nothing flagged.
 ```
+
+The move offer doesn't count as flagged: append ` → /agent-kevin:move when you're ready.` to the one-liner instead.
 
 A pending upgrade, a due cadence item or anything in `🔔 Slack` is "something flagged" — if any fired, don't use the clean one-liner; keep the `⬆️ Upgrade`, `📅 Cadence` and `🔔 Slack` lines so the nudge isn't swallowed:
 

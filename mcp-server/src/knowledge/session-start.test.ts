@@ -363,11 +363,9 @@ describe('sessionStart', () => {
     ['another Claude surface, plain', 'claude-vscode', rowStamp(PLUGIN_VERSION), 9, 'Brain 9 days behind', false]
   ])('sync: %s', async (_label, entrypoint, stamp, age, title, isColored) => {
     const banner = await hookBanner(entrypoint, { ...syncedDaysAgo(age), ...stamp });
-    const line = stripAnsi(banner)
-      .split('\n')
-      .find((text) => text.includes('Sync:'));
-    expect(line ?? null).toEqual(title === null ? null : expect.stringContaining(title));
-    expect(banner.includes('\x1b[')).toBe(isColored && title !== null);
+    const raw = banner.split('\n').find((text) => stripAnsi(text).includes('Sync:'));
+    expect(raw === undefined ? null : stripAnsi(raw)).toEqual(title === null ? null : expect.stringContaining(title));
+    expect(raw?.includes('\x1b[') ?? false).toBe(isColored && title !== null);
   });
 
   test('sync: a snooze from any surface hides the banner line for the day', async () => {

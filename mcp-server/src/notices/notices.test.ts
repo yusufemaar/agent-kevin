@@ -71,8 +71,17 @@ describe('sync escalation', () => {
   test('a stale home reads its age in the title and calls sync', async () => {
     const notices = await withHome({ ...versionAt(PLUGIN_VERSION), ...syncedDaysAgo(5) }, () => collectNotices());
     expect(notices.map((notice) => [notice.id, notice.level, notice.title, notice.command])).toEqual([
-      ['sync', 'nudge', 'Brain 5 days behind', `${pluginName()}:sync`]
+      ['sync', 'nudge', 'Brain 5 days behind', `${pluginName()}:sync`],
+      ['move', 'hint', 'agentlayer is ready', `${pluginName()}:move`]
     ]);
+  });
+
+  test('a moved home stops offering the move', async () => {
+    const notices = await withHome(
+      { 'version.json': JSON.stringify({ plugin: pluginName(), templateVersion: PLUGIN_VERSION, movedTo: '/elsewhere/Oppi' }), ...syncedDaysAgo(0) },
+      () => collectNotices()
+    );
+    expect(notices.map((notice) => notice.id)).toEqual([]);
   });
 
   test('a pending welcome holds the sync notice back', async () => {
@@ -110,7 +119,8 @@ describe('upgrade escalation', () => {
     const quiet = await withHome({ ...versionAt(previousRelease ?? ''), ...syncedDaysAgo(9) }, () => collectNotices());
     expect(quiet.map((notice) => [notice.id, notice.level])).toEqual([
       ['upgrade', 'nudge'],
-      ['sync', 'alert']
+      ['sync', 'alert'],
+      ['move', 'hint']
     ]);
   });
 });
@@ -165,7 +175,7 @@ describe('the ledger', () => {
         return { shown, ledger: readLedger() };
       }
     );
-    expect(result.shown.map((notice) => notice.id)).toEqual(['sync']);
+    expect(result.shown.map((notice) => notice.id)).toEqual(['sync', 'move']);
     expect(result.ledger.streaks.sync).toBe(1);
     expect(result.ledger.row).toBeUndefined();
   });

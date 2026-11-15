@@ -174,8 +174,22 @@ describe('migrate', () => {
     const blockers = planMigration({ ...options, pluginVersion: '9.9.10', name: 'Op/pi' }).blockers.join('\n');
     expect(blockers).toContain('run /agent-kevin:upgrade to 9.9.10 first');
     expect(blockers).toContain('already exists');
-    expect(blockers).toContain('run sync first');
+    expect(blockers).toContain('(scratch.md); run sync first');
     expect(blockers).toContain('--name "Op/pi"');
+  });
+
+  test('what exiting sessions and an open Obsidian write after the sync moves across and is committed in the copy', async () => {
+    const { home, gitDir, options } = fixture();
+    write(join(home, 'knowledge', 'raw', 'sessions', '2026-11-15.md'), '### Session (09:00) [aaaa1111] · last turns\n');
+    write(join(home, '.obsidian', 'workspace.json'), '{}');
+    expect(planMigration(options).blockers).toEqual([]);
+    const result = await applyMigration(planMigration(options), false);
+    expect(readFileSync(join(result.home, 'knowledge', 'raw', 'sessions', '2026-11-15.md'), 'utf-8')).toContain('last turns');
+    expect(result.commits).toHaveLength(2);
+    const committed = execFileSync('git', ['--git-dir', result.history ?? '', 'show', '--name-only', '--format=%s', `${result.commits[0]}`], { encoding: 'utf8' });
+    expect(committed).toContain('Capture the sessions the move would have missed');
+    expect(committed).toContain('knowledge/raw/sessions/2026-11-15.md');
+    expect(execFileSync('git', ['--git-dir', gitDir, '--work-tree', home, 'status', '--porcelain'], { encoding: 'utf8' })).toContain('2026-11-15.md');
   });
 
   test('a session Claude Code holds that the brain lacks is listed for capture', () => {

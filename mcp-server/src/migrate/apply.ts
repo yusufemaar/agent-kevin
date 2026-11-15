@@ -92,7 +92,8 @@ const copyAndRewrite = async (plan: Plan, retire: boolean): Promise<ApplyResult>
   const commits: string[] = [];
 
   const captured = await captureInto(plan);
-  if (tracked && captured > 0) {
+  // Also the session logs written after the last sync, which the copy carried across uncommitted.
+  if (tracked) {
     const id = commitAll(plan, 'Capture the sessions the move would have missed');
     if (id) {
       commits.push(id);

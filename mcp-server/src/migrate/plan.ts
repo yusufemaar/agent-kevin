@@ -164,15 +164,27 @@ const historyOf = (home: string, userHome: string): string | null => {
   return null;
 };
 
-const historyDirty = (home: string, gitDir: string | null): boolean => {
+/**
+ * What exiting a session writes (its last turns, and the session index) and what an open Obsidian
+ * keeps saving. Uncommitted, these move with the copy and are committed there, so the operator can
+ * sync, then exit every session, then move.
+ */
+const WRITTEN_AFTER_SYNC = [join('knowledge', 'raw', 'sessions'), '.obsidian'].map((dir) => `${posix(dir)}/`);
+
+/** Uncommitted paths in the home's history other than the ones `WRITTEN_AFTER_SYNC` lets through. */
+const unsynced = (home: string, gitDir: string | null): string[] => {
   if (!gitDir && !lstat(join(home, '.git'))?.isDirectory()) {
-    return false;
+    return [];
   }
   const where = gitDir ? ['--git-dir', gitDir, '--work-tree', home] : ['-C', home];
   try {
-    return execFileSync('git', ['--no-optional-locks', ...where, 'status', '--porcelain'], { encoding: 'utf8' }).trim() !== '';
+    return execFileSync('git', ['--no-optional-locks', ...where, 'status', '--porcelain', '--untracked-files=all'], { encoding: 'utf8' })
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => line.slice(3).split(' -> ').at(-1)?.replace(/^"|"$/g, '') ?? '')
+      .filter((path) => !WRITTEN_AFTER_SYNC.some((dir) => path.startsWith(dir)));
   } catch {
-    return false;
+    return [];
   }
 };
 
@@ -270,8 +282,9 @@ export const planMigration = (options: MigrateOptions): Plan => {
   if (newHistory && existsSync(newHistory)) {
     blockers.push(`${newHistory} already exists`);
   }
-  if (historyDirty(home, oldHistory)) {
-    blockers.push('the home has changes its history has not committed; run sync first');
+  const pending = unsynced(home, oldHistory);
+  if (pending.length > 0) {
+    blockers.push(`the home has changes its history has not committed (${pending.slice(0, 3).join(', ')}${pending.length > 3 ? ', …' : ''}); run sync first`);
   }
 
   const homeMove: PathMove = { from: home, to };

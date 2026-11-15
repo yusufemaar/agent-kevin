@@ -131,9 +131,20 @@ describe('migrate', () => {
     expect(JSON.parse(read('.state/version.json'))).toEqual({
       plugin: 'agentlayer',
       templateVersion: '9.9.9',
-      migratedFrom: { plugin: 'agent-kevin', home, name: 'Kevin', at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) }
+      migratedFrom: {
+        plugin: 'agent-kevin',
+        home,
+        name: 'Kevin',
+        at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        log: '.state/logs/move.json'
+      }
     });
     expect(JSON.parse(read('.state/cadence.json'))).toEqual({ welcome: 'pending' });
+    const moveLog = JSON.parse(read('.state/logs/move.json'));
+    expect(moveLog).toMatchObject({ from: home, to, history: plan.history, deletes: plan.deletes, captured: [] });
+    expect(moveLog.persona).toContainEqual(expect.objectContaining({ path: 'AGENTS.md', before: expect.stringContaining('Kevin runs') }));
+    expect(moveLog.product).toEqual(plan.report.product);
+    expect(moveLog.leftovers).toEqual(plan.report.leftovers);
 
     expect(result.history).toBe(join(options.stateRoot, 'agentlayer', 'Agents-Oppi.git'));
     const log = (dir: string, ...args: string[]) => execFileSync('git', ['--git-dir', dir, ...args], { encoding: 'utf8' }).trim();
@@ -190,6 +201,38 @@ describe('migrate', () => {
     expect(committed).toContain('scratch.md');
     expect(committed).toContain('knowledge/raw/sessions/2026-11-15.md');
     expect(execFileSync('git', ['--git-dir', gitDir, '--work-tree', home, 'status', '--porcelain'], { encoding: 'utf8' })).toContain('2026-11-15.md');
+  });
+
+  test('the move log in the copy lists the sessions the move captured; a dry run writes no log', async () => {
+    const { home, options } = fixture();
+    const folder = join(options.claudeProjects, home.replace(/[^A-Za-z0-9-]/g, '-'));
+    write(
+      join(folder, 'abcd1234-open.jsonl'),
+      [
+        { type: 'user', message: { role: 'user', content: 'pick up the move' } },
+        { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'On it.' }] } }
+      ]
+        .map((line) => JSON.stringify(line))
+        .join('\n')
+    );
+    const plan = planMigration(options);
+    expect(existsSync(join(options.to, '.state', 'logs', 'move.json'))).toBe(false);
+    // Capture pins the copy's paths in this process's env; put the preload's back for the files after this one.
+    const pinned = ['AGENT_HOME', 'AGENT_KNOWLEDGE', 'AGENT_LOG_FILE'].map((key) => [key, process.env[key]] as const);
+    try {
+      const result = await applyMigration(plan, false);
+      const moveLog = JSON.parse(readFileSync(join(result.home, '.state', 'logs', 'move.json'), 'utf-8'));
+      expect(moveLog.captured).toEqual([{ id: 'abcd1234-open', turns: expect.any(Number) }]);
+      expect(result.captured).toBe(1);
+    } finally {
+      pinned.forEach(([key, value]) => {
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      });
+    }
   });
 
   test('a session Claude Code holds that the brain lacks is listed for capture', () => {

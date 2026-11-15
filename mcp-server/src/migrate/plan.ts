@@ -72,6 +72,8 @@ export interface Plan {
 }
 
 const IDENTITY = 'IDENTITY.md';
+/** The move's full change list, written into the copy for its first session to check. */
+export const MOVE_LOG = join(RUNTIME_DIR, 'logs', 'move.json');
 /** The nickname IDENTITY gains when a home takes the name (the new plugin's README: "Oppi, or Ops to its friends"). */
 const NICKNAMES: Partial<Record<string, string>> = { Oppi: 'Ops' };
 const ROOT_FILES = ['SOUL.md', IDENTITY, 'AGENTS.md', 'USER.md', join('.claude', 'CLAUDE.md')];
@@ -444,7 +446,14 @@ export const planMigration = (options: MigrateOptions): Plan => {
     blockers.push(`--welcome would overwrite ${posix(note)}, which this home already has; rename the note`);
   }
   if (version) {
-    const migratedFrom = { plugin: SOURCE.plugin, home, name: current, at: todayDate(), ...(note ? { note: posix(note) } : {}) };
+    const migratedFrom = {
+      plugin: SOURCE.plugin,
+      home,
+      name: current,
+      at: todayDate(),
+      ...(note ? { note: posix(note) } : {}),
+      log: posix(MOVE_LOG)
+    };
     edits.push({
       path: join(RUNTIME_DIR, 'version.json'),
       text: `${JSON.stringify({ ...version, plugin: TARGET.plugin, migratedFrom }, null, 2)}\n`

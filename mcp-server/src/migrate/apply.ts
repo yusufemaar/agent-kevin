@@ -9,7 +9,7 @@ import { basename, dirname, join } from 'node:path';
 import { RUNTIME_DIR } from '@/shared/naming';
 import { HOME_BINDING_KEY, historyInside } from '@/home/git-dir-record';
 import { pinEnv } from '@/shared/settings-env';
-import type { Plan } from './plan';
+import { MOVE_LOG, type Plan } from './plan';
 
 export interface ApplyResult {
   home: string;
@@ -39,10 +39,15 @@ const commitAll = (plan: Plan, message: string): string | null => {
   return git(plan, ['rev-parse', '--short', 'HEAD']);
 };
 
+interface Captured {
+  id: string;
+  turns: number;
+}
+
 /** Turns Claude Code holds for the old home that the brain lacks, appended to the copy's session logs. */
-const captureInto = async (plan: Plan): Promise<number> => {
+const captureInto = async (plan: Plan): Promise<Captured[]> => {
   if (plan.transcripts.length === 0) {
-    return 0;
+    return [];
   }
   pinEnv('AGENT_HOME', plan.to);
   // The copy's own knowledge folder, whatever the old home's process inherited.
@@ -50,15 +55,12 @@ const captureInto = async (plan: Plan): Promise<number> => {
   pinEnv('AGENT_LOG_FILE', 'off');
   const { captureSession } = await import('@/knowledge/session-capture');
   // One at a time: captures share a lock that a waiting capture gives up on after a moment.
-  return plan.transcripts.reduce(
-    async (saved, transcriptPath) =>
-      (await saved) +
-      ((await captureSession({ transcriptPath, cwd: plan.from, sessionId: basename(transcriptPath, '.jsonl'), mode: 'session-end' }))
-        .saved
-        ? 1
-        : 0),
-    Promise.resolve(0)
-  );
+  return plan.transcripts.reduce(async (saved, transcriptPath) => {
+    const done = await saved;
+    const id = basename(transcriptPath, '.jsonl');
+    const result = await captureSession({ transcriptPath, cwd: plan.from, sessionId: id, mode: 'session-end' });
+    return result.saved ? [...done, { id, turns: result.turns }] : done;
+  }, Promise.resolve<Captured[]>([]));
 };
 
 export const applyMigration = async (plan: Plan, retire: boolean): Promise<ApplyResult> => {
@@ -109,6 +111,9 @@ const copyAndRewrite = async (plan: Plan, retire: boolean): Promise<ApplyResult>
     copyFileSync(from, join(plan.to, to));
   });
   plan.deletes.forEach((path) => rmSync(join(plan.to, path), { force: true }));
+  const log = { at: new Date().toISOString(), from: plan.from, to: plan.to, history: plan.history, deletes: plan.deletes, captured, ...plan.report };
+  mkdirSync(dirname(join(plan.to, MOVE_LOG)), { recursive: true });
+  writeFileSync(join(plan.to, MOVE_LOG), `${JSON.stringify(log, null, 2)}\n`);
   if (tracked) {
     const id = commitAll(plan, 'Moved from agent-kevin');
     if (id) {
@@ -126,7 +131,7 @@ const copyAndRewrite = async (plan: Plan, retire: boolean): Promise<ApplyResult>
   return {
     home: plan.to,
     history: plan.history?.to ?? null,
-    captured,
+    captured: captured.length,
     written: plan.edits.length,
     deleted: plan.deletes.length,
     commits,

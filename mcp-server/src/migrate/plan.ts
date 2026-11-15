@@ -184,6 +184,16 @@ const oldCheckoutOf = (settings: (JsonObject | null)[]): string | null =>
     })
     .find((path): path is string => path !== null) ?? null;
 
+/** The old plugin's ids in the user's Codex config; none when it is absent or doesn't parse. */
+const codexPluginsOf = (userHome: string): string[] => {
+  try {
+    const config = Bun.TOML.parse(readFileSync(join(userHome, CODEX_CONFIG), 'utf-8')) as { plugins?: JsonObject };
+    return Object.keys(config.plugins ?? {}).filter((id) => id.startsWith(`${SOURCE.plugin}@`));
+  } catch {
+    return [];
+  }
+};
+
 const NEW_SESSION_WINDOW_MS = 7 * 86_400_000;
 
 /**
@@ -379,7 +389,7 @@ export const planMigration = (options: MigrateOptions): Plan => {
 
   const codexConfig = existsSync(join(home, CODEX_CONFIG)) ? readFileSync(join(home, CODEX_CONFIG), 'utf-8') : null;
   if (codexConfig !== null) {
-    const after = migrateCodexConfig(codexConfig, paths, options.userHome);
+    const after = migrateCodexConfig(codexConfig, paths, options.userHome, codexPluginsOf(options.userHome));
     const parses = ((): boolean => {
       try {
         Bun.TOML.parse(after);

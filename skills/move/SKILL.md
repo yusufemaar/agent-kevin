@@ -96,6 +96,8 @@ Then, per home, in order:
    - `install: marketplace`: `cd "<new folder>" && claude plugin install agentlayer@agentlayer --scope local`.
 
    `--scope local` installs it for that folder alone; the whole-account default would also load it in the old home.
+
+   **A home that runs Codex** (it has `.codex/hooks.json`) also needs the plugin in Codex, which registers plugins for the whole account. The move switches the old plugin off in the new home's `.codex/config.toml`, and the welcome's upgrade prints the two `codex plugin` lines that add agentlayer. Once agentlayer is on in Codex, a home still on the old plugin loads both there: add `[plugins."agentlayer@<marketplace>"]` with `enabled = false` to that home's `.codex/config.toml` until it moves.
 4. **Open the new folder.** The welcome greets the operator as the new agent, finishes the move (the upgrade, then a first sync in the new home), and offers the sessions picked in step 4. If `/plugin` doesn't list agentlayer, the install didn't land: run it again, then reopen.
 5. **Point the rest at the new folder:**
    - **Auto mode:** if `~/.claude/settings.json` has an `autoMode` block, its `environment` entry starting "Agent homes:" lists the homes the custom rules apply to. Add the new folder's path there and keep the others; the welcome's upgrade flags it too. Until then, routine writes in the new home aren't treated as agent-home work.

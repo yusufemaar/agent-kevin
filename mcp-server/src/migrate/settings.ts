@@ -97,9 +97,10 @@ const CODEX_DEFAULT = new RegExp(`^default_permissions\\s*=\\s*"${SOURCE.server}
 
 /**
  * Codex's `config.toml` without the old plugin's tables (its MCP server, its permission profile)
- * or its default profile, other paths moved. The new plugin's upgrade writes its own.
+ * or its default profile, other paths moved. The new plugin's upgrade writes its own. Codex enables a
+ * plugin for every folder, so each old plugin id it has (`oldPlugins`) is switched off for this home.
  */
-export const migrateCodexConfig = (toml: string, moves: PathMove[], userHome: string): string => {
+export const migrateCodexConfig = (toml: string, moves: PathMove[], userHome: string, oldPlugins: string[]): string => {
   let dropping = false;
   const kept = toml.split('\n').filter((line) => {
     if (ANY_TABLE.test(line)) {
@@ -107,7 +108,10 @@ export const migrateCodexConfig = (toml: string, moves: PathMove[], userHome: st
     }
     return !dropping && !CODEX_DEFAULT.test(line.trim());
   });
-  return movePaths(kept.join('\n').replace(/\n{3,}/g, '\n\n'), moves, userHome);
+  const disables = oldPlugins
+    .filter((id) => !kept.some((line) => line.trim() === `[plugins."${id}"]`))
+    .flatMap((id) => ['', `[plugins."${id}"]`, 'enabled = false', '']);
+  return movePaths([...kept, ...disables].join('\n').replace(/\n{3,}/g, '\n\n'), moves, userHome);
 };
 
 /** Codex's `hooks.json` without the old plugin's hooks; the operator's own stay. */

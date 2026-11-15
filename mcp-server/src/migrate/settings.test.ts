@@ -91,9 +91,18 @@ describe('migrateCodexConfig', () => {
       'cwd = "/Users/ada/Agents/Kevin"',
       ''
     ].join('\n');
-    expect(migrateCodexConfig(toml, moves, USER)).toBe(
+    expect(migrateCodexConfig(toml, moves, USER, [])).toBe(
       ['model = "gpt-5"', '', '[mcp_servers.xcode]', 'command = "xcrun"', 'cwd = "/Users/ada/Agents/Oppi"', ''].join('\n')
     );
+  });
+
+  test('switches off the old plugin Codex enables for every folder, unless the home already sets it', () => {
+    const toml = '[plugins."agent-other@x"]\nenabled = false\n';
+    expect(migrateCodexConfig(toml, moves, USER, ['agent-kevin@agentdev-kevin'])).toBe(
+      '[plugins."agent-other@x"]\nenabled = false\n\n[plugins."agent-kevin@agentdev-kevin"]\nenabled = false\n'
+    );
+    const own = '[plugins."agent-kevin@agentdev-kevin"]\nenabled = true\n';
+    expect(migrateCodexConfig(own, moves, USER, ['agent-kevin@agentdev-kevin'])).toBe(own);
   });
 });
 
@@ -119,6 +128,6 @@ describe('the old plugin, and only it', () => {
   });
 
   test('an old table header with a trailing comment is still removed', () => {
-    expect(migrateCodexConfig('[mcp_servers.kevin] # generated\ncommand = "bun"\n\n[tui]\nx = 1\n', moves, USER)).toBe('[tui]\nx = 1\n');
+    expect(migrateCodexConfig('[mcp_servers.kevin] # generated\ncommand = "bun"\n\n[tui]\nx = 1\n', moves, USER, [])).toBe('[tui]\nx = 1\n');
   });
 });

@@ -56,7 +56,13 @@ Run the preview again with the `--keep` flags. Its only blocker should be "the h
 
 ## 4. Sessions to continue
 
-Claude Code's old sessions can't be resumed from the new folder, but the brain holds them, and the new home can pick them up. Run the attention skill's checkpoint (`/agent-kevin:attention checkpoint all`, or its playbook directly) and list the recent sessions grouped by home folder. Ask which to continue in each new home, and the next step for each.
+Claude Code's old sessions can't be resumed from the new folder, but the brain holds them, and the new home can pick them up. Do this while the operator's sessions are still open. List the last week's sessions across every picked home (the attention skill's checkpoint only looks at this home and the last day):
+
+```bash
+bun "${CLAUDE_PLUGIN_ROOT}/skills/attention/scripts/list_sessions.ts" --hours 168 --scope "<home>,<home>"
+```
+
+Show them as a numbered list grouped by home: title, how long ago, and one line on where it stopped (from `last_assistant_text`). Ask the operator to name the ones to continue (a list this long doesn't fit a four-option question), and whether any ongoing session is older than a week. For each pick, propose the next step from where it stopped and let them correct it.
 
 ## 5. Save a move note per home
 

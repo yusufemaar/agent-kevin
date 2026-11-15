@@ -111,7 +111,15 @@ const copyAndRewrite = async (plan: Plan, retire: boolean): Promise<ApplyResult>
     copyFileSync(from, join(plan.to, to));
   });
   plan.deletes.forEach((path) => rmSync(join(plan.to, path), { force: true }));
-  const log = { at: new Date().toISOString(), from: plan.from, to: plan.to, history: plan.history, deletes: plan.deletes, captured, ...plan.report };
+  const log = {
+    at: new Date().toISOString(),
+    from: plan.from,
+    to: plan.to,
+    history: plan.history,
+    deletes: plan.deletes,
+    captured,
+    ...plan.report
+  };
   mkdirSync(dirname(join(plan.to, MOVE_LOG)), { recursive: true });
   writeFileSync(join(plan.to, MOVE_LOG), `${JSON.stringify(log, null, 2)}\n`);
   if (tracked) {

@@ -84,4 +84,15 @@ describe('keepCandidates', () => {
     expect(text).toContain('## Kept for the operator to rewrite (1)');
     expect(text.indexOf('## Blockers (1)')).toBe(0);
   });
+
+  test('puts the plugin-name renames and the logins the settings still use in front of the review', () => {
+    const text = keepCandidates({
+      product: [{ path: 'projects/acme/tasks/ac-001.md', line: 31, before: 'A dedicated WordPress user, `agent-kevin`, on the lowest role.' }],
+      leftovers: ['.claude/settings.local.json env.SUPPORTDESK_USERNAME: agent-kevin']
+    });
+    expect(text).toContain('## Plugin name renamed (1)');
+    expect(text).toContain('projects/acme/tasks/ac-001.md:31 | A dedicated WordPress user, `agent-kevin`, on the lowest role.');
+    expect(text).toContain('## Still used by the settings (1)');
+    expect(text).toContain('env.SUPPORTDESK_USERNAME: agent-kevin');
+  });
 });

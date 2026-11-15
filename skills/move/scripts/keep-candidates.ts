@@ -17,8 +17,10 @@ interface LineChange {
 interface Preview {
   blockers?: string[];
   persona?: LineChange[];
+  product?: LineChange[];
   review?: LineChange[];
   manual?: string[];
+  leftovers?: string[];
 }
 
 const lines = (changes: LineChange[] = []): string[] => changes.map((change) => `${change.path}:${change.line} | ${change.before}`);
@@ -31,6 +33,12 @@ export const keepCandidates = (preview: Preview): string =>
     '',
     `## Renamed (${preview.persona?.length ?? 0}): keep a line when the old name there is someone or something else`,
     ...lines(preview.persona),
+    '',
+    `## Plugin name renamed (${preview.product?.length ?? 0}): keep a line when the old plugin's name there is a login or account, a document as sent or signed, or a fact the new name would make false`,
+    ...lines(preview.product),
+    '',
+    `## Still used by the settings (${preview.leftovers?.length ?? 0}): a line naming one of these values is a login, so keep it`,
+    ...(preview.leftovers ?? []),
     '',
     `## Left as written, for review (${preview.review?.length ?? 0})`,
     ...lines(preview.review),

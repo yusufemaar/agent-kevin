@@ -38,15 +38,16 @@ Run the preview from that home's folder, with the session's own `AGENT_*` paths 
 P=$(mktemp "${TMPDIR:-/tmp}/move-preview-XXXXXX") && ( cd "<home>" && env -u AGENT_HOME -u AGENT_KNOWLEDGE -u AGENT_PROJECTS -u AGENT_REPORTS bun "${CLAUDE_PLUGIN_ROOT}/bin/kevin" migrate --to "<new folder>" --name "<new name>" <emoji and avatar flags> ) > "$P"; bun "${CLAUDE_PLUGIN_ROOT}/skills/move/scripts/keep-candidates.ts" "$P"
 ```
 
-It prints the blockers, every line the rename would change (`path:line | text`), lines left as written for review, and lines kept for the operator to rewrite. The preview's own JSON (`$P`) also names the new history folder (`history.to`): keep it for the move note.
+It prints the blockers, every line the agent's rename would change and every line the plugin's rename would change (`path:line | text`), the values the settings still use under the old plugin's name, lines left as written for review, and lines kept for the operator to rewrite. The preview's own JSON (`$P`) also names the new history folder (`history.to`): keep it for the move note.
 
-**Read every renamed line for meaning.** The rename is right when the old name means this agent or this plugin. It is wrong, and the line needs `--keep <path>:<line>`, when the old name is:
+**Read every renamed line for meaning, in both rename sections.** The rename is right when the old name means this agent or this plugin. It is wrong, and the line needs `--keep <path>:<line>`, when the old name is:
 
 - another person ("Kevin Moreau", a byline);
 - someone else's agent ("Ada's Kevin", "the acme team's Scout"), unless that agent moves to the same new name: once Ada's Kevin is Oppi, "Ada's Kevin" renames in a home taking Oppi (ask the operator when unsure);
-- an account, workspace, role or product name ("Agent Kevin" as a support-desk role or a terminal workspace);
+- an account, workspace, role or product name ("Agent Kevin" as a support-desk role or a terminal workspace), and any login the settings still use: a line naming a value listed under "Still used by the settings" (a helpdesk username `agent-kevin`) is a keep;
+- a document as it was sent or signed: a contract, an invoice, a filing, a reply already sent;
 - a title or quotation of something outside this home;
-- history that would turn false: what the agent was called then (an old bot's name, a message it signed and sent, "a renamed Kevin" describing another agent's origin), or a dated attribution ("first draft by Kevin, 2026-04-26").
+- history that would turn false: what the agent was called then (an old bot's name, a message it signed and sent, "a renamed Kevin" describing another agent's origin), a dated attribution ("first draft by Kevin, 2026-04-26"), or a fact about the old plugin ("every home on `agent-kevin` reads `KEVIN_*`").
 
 A whole document about the old agent's past (a "v1" architecture write-up, research it requested back then) or about the move itself (a runbook, the task tracking the move) takes `--keep <path>`, no line number: its text stays as written, and only a task's assignee moves.
 

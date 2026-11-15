@@ -52,7 +52,7 @@ A whole document about the old agent's past (a "v1" architecture write-up, resea
 
 When unsure, it's a keep: a kept line can be edited by hand later, while a wrong rename reads as nonsense. Show the proposed keeps as a table (line, text, why) and let the operator add or drop any. In a home whose agent isn't the one named in a line (Scout mentioning a "Kevin"), the "left as written" lines are already kept; confirm none of them actually means this agent.
 
-Run the preview again with the `--keep` flags. Its only blocker should be "the home has changes its history has not committed (…); run sync first", or none. Anything else, explain it and stop for that home.
+Run the preview again with the `--keep` flags. It should have no blockers. Anything else, explain it and stop for that home.
 
 ## 4. Sessions to pick up first
 
@@ -89,7 +89,7 @@ cd "<home>" && env -u AGENT_HOME -u AGENT_KNOWLEDGE -u AGENT_PROJECTS -u AGENT_R
 
 Then, per home, in order:
 
-1. **In that home:** `/agent-kevin:sync`, then exit every session there, the one running this skill included. Each exit saves that session's last turns to the brain's session logs after the sync; the move accepts those (and Obsidian's own settings) uncommitted, carries them across and commits them in the new home. Anything else still unsynced stops the move with "run sync first".
+1. **In that home:** exit every session there, the one running this skill included. Exiting saves each session's last turns to the brain. Don't sync first: sync compiles into the very files the line keeps point at, and moves their lines. Everything since the last sync comes across with the move, and the new home's first sync compiles and commits it.
 2. **In their own terminal** (not Claude Code): the command above. `--retire` marks the old home as moved, so its sessions say so and its sync stops committing.
 3. **Open the new folder** with Claude Code, accept the trust prompt, and install the new plugin there if `/plugin` doesn't list it yet, choosing the scope for this folder only (never the whole account, or it also loads in the old home):
    - `install: dev`: the new plugin's checkout is `agentlayer-agent` in the same folder as the home's `checkout` (the preview blocks until it exists, so clone it there first, or pass `--checkout <path>` to the command). Then `/plugin marketplace add <that checkout>` and `/plugin install agentlayer@agentlayer-dev`.

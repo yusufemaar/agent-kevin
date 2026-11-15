@@ -213,6 +213,24 @@ describe('migrate capture', () => {
       ['aaaa1111-known', 'dddd4444-new'].map((id) => join(folder, `${id}.jsonl`))
     );
   });
+
+  test('a session found nowhere that last ran over a week ago stays behind; a known one still goes', () => {
+    const { home, options } = fixture();
+    const folder = join(options.claudeProjects, home.replace(/[^A-Za-z0-9-]/g, '-'));
+    write(
+      join(home, 'knowledge', 'raw', 'sessions', 'index.json'),
+      JSON.stringify({ sessions: { 'aaaa1111-known': {} } })
+    );
+    const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+    ['aaaa1111-known', 'eeee9999-may'].forEach((id) => {
+      write(join(folder, `${id}.jsonl`), '{}\n');
+      utimesSync(join(folder, `${id}.jsonl`), eightDaysAgo, eightDaysAgo);
+    });
+    write(join(folder, 'ffff0000-today.jsonl'), '{}\n');
+    expect(planMigration(options).transcripts.sort()).toEqual(
+      ['aaaa1111-known', 'ffff0000-today'].map((id) => join(folder, `${id}.jsonl`))
+    );
+  });
 });
 
 describe('migrate without a marketplace entry', () => {

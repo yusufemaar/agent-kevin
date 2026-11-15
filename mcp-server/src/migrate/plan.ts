@@ -2,7 +2,7 @@
  * What `migrate` would write: every file of the new home whose text changes, computed from the old
  * home without touching it. The dry run prints this plan; `apply` copies the home and writes it.
  */
-import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, extname, join, relative, sep } from 'node:path';
 import { FORMERLY_FIELD, NAME_FIELD, NAME_RE, agentNameIn, formerNamesIn } from '@/shared/agent-name';
 import { RUNTIME_DIR } from '@/shared/naming';
@@ -184,11 +184,14 @@ const oldCheckoutOf = (settings: (JsonObject | null)[]): string | null =>
     })
     .find((path): path is string => path !== null) ?? null;
 
+const NEW_SESSION_WINDOW_MS = 7 * 86_400_000;
+
 /**
  * Transcripts Claude Code holds for the old home that capture should see. A session the index knows by
  * its full id goes to capture, whose cursor keeps only turns the brain lacks. One it knows only by the
  * short id older captures used, or one a day-log entry is headed by, was captured whole before cursors
- * existed, so capturing it again would write its turns twice; only a session found nowhere is new.
+ * existed, so capturing it again would write its turns twice. A session found nowhere is new only if it ran
+ * in the last week, the window the move lists: an older one the brain never took would land in today's log.
  */
 const transcriptsOf = (home: string, claudeProjects: string): string[] => {
   const folder = join(claudeProjects, home.replace(/[^A-Za-z0-9-]/g, '-'));
@@ -201,11 +204,16 @@ const transcriptsOf = (home: string, claudeProjects: string): string[] => {
       (textOf(join(home, rel)) ?? '').split(ENTRY_SPLIT_RE).flatMap((entry) => entry.match(ENTRY_ID)?.[1] ?? [])
     )
   );
+  const since = Date.now() - NEW_SESSION_WINDOW_MS;
   return readdirSync(folder)
     .filter((name) => name.endsWith('.jsonl'))
     .filter((name) => {
       const id = name.slice(0, -'.jsonl'.length);
-      return indexed.includes(id) || (!indexed.includes(id.slice(0, 8)) && !logged.has(id.slice(0, 8)));
+      const short = id.slice(0, 8);
+      return (
+        indexed.includes(id) ||
+        (!indexed.includes(short) && !logged.has(short) && statSync(join(folder, name)).mtimeMs > since)
+      );
     })
     .map((name) => join(folder, name));
 };

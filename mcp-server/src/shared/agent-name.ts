@@ -56,12 +56,16 @@ export const FORMERLY_FIELD = /^(.*?\*\*Formerly:\*\*)[ \t]*(.*?)[ \t]*$/m;
  * digit, `-`, `/` or `\` is part of a path or identifier (`~/Documents/Agents/Kevin`,
  * `C:\Agents\Kevin`, `Documents-Agents-Kevin.git`, `X-Kevin-Test`) and stays. When the new name
  * contains the old one (`Kevin Prime`), a mention already inside it stays too, so a rerun
- * can't rename it twice.
+ * can't rename it twice. An "a" or "an" in front follows the new name's first letter ("a Kevin",
+ * "an Oppi").
  */
 export const renameAgent = (text: string, from: string, to: string): string => {
   const bounded = `(?<![A-Za-z0-9/\\\\-])${literal(from)}(?![A-Za-z0-9/\\\\-])`;
   const pattern = to.includes(from) ? `${literal(to)}|${bounded}` : bounded;
-  return text.replace(new RegExp(pattern, 'g'), () => to);
+  const an = /^[aeiou]/i.test(to) ? 'n' : '';
+  return text.replace(new RegExp(`(?:(?<![\\w-])([Aa])n? )?(?:${pattern})`, 'g'), (_, article?: string) =>
+    article ? `${article}${an} ${to}` : to
+  );
 };
 
 const literal = (name: string): string => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

@@ -129,6 +129,14 @@ describe('renameAgent', () => {
   test('a mention already inside the new name stays, so a rerun is a no-op', () => {
     expect(renameAgent('Kevin and Kevin Prime', 'Kevin', 'Kevin Prime')).toBe('Kevin Prime and Kevin Prime');
   });
+
+  test('an article in front follows the new name', () => {
+    expect(renameAgent('A Kevin fork, a Kevin export, and Kevin alone.', 'Kevin', 'Oppi')).toBe(
+      'An Oppi fork, an Oppi export, and Oppi alone.'
+    );
+    expect(renameAgent('an Oppi skill', 'Oppi', 'Vega')).toBe('a Vega skill');
+    expect(renameAgent('Ka Kevin, data Kevin', 'Kevin', 'Oppi')).toBe('Ka Oppi, data Oppi');
+  });
 });
 
 describe('withoutFormerNames', () => {

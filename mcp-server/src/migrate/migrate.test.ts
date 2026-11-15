@@ -103,7 +103,7 @@ describe('migrate', () => {
 
     expect(snapshot(home, files)).toEqual(before);
     expect(read('IDENTITY.md')).toBe(
-      '# Identity\n\n![Oppi](assets/kevin-avatar.jpg)\n\n- **Name:** Oppi\n- **Formerly:** Kevin\n- **Emoji:** 🐙\n- **Avatar:** [`assets/kevin-avatar.jpg`](assets/kevin-avatar.jpg)\n'
+      '# Identity\n\n![Oppi](assets/kevin-avatar.jpg)\n\n- **Name:** Oppi\n- **Nickname:** Ops\n- **Formerly:** Kevin\n- **Emoji:** 🐙\n- **Avatar:** [`assets/kevin-avatar.jpg`](assets/kevin-avatar.jpg)\n'
     );
     expect(read('AGENTS.md')).toBe(
       `# Manual\n\nOppi runs /agentlayer:sync. History: \`${result.history}\`.\nKevin Moreau has a channel.\n`
@@ -340,6 +340,15 @@ describe('migrate keeps to the home it copies', () => {
     const plan = planMigration(options);
     expect(plan.edits.find((edit) => edit.path === 'SOUL.md')?.text).toBe('You are Oppi.\nInspired by the minion Kevin, but calmer.\nOppi knows to Him belongs dominion.\n');
     expect(plan.report.manual).toContain('SOUL.md:2: about the old mascot, kept as written for you to rewrite');
+  });
+
+  test('only a home that takes the name Oppi gains its nickname', () => {
+    const { options } = fixture();
+    const identity = (name: string) =>
+      planMigration({ ...options, name, to: join(options.to, '..', name) }).edits.find((edit) => edit.path === 'IDENTITY.md')?.text;
+    expect(identity('Oppi')).toContain('- **Name:** Oppi\n- **Nickname:** Ops\n- **Formerly:** Kevin\n');
+    expect(identity('Scout')).toContain('- **Name:** Scout\n- **Formerly:** Kevin\n');
+    expect(identity('Scout')).not.toContain('Nickname');
   });
 
   test('a planned write through a symlink is refused', () => {

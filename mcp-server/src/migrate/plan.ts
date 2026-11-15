@@ -72,6 +72,8 @@ export interface Plan {
 }
 
 const IDENTITY = 'IDENTITY.md';
+/** The nickname IDENTITY gains when a home takes the name (the new plugin's README: "Oppi, or Ops to its friends"). */
+const NICKNAMES: Partial<Record<string, string>> = { Oppi: 'Ops' };
 const ROOT_FILES = ['SOUL.md', IDENTITY, 'AGENTS.md', 'USER.md', join('.claude', 'CLAUDE.md')];
 const TREES = [join('.claude', 'rules'), 'knowledge', 'projects'];
 const DATED = [join('knowledge', 'raw'), join('projects', 'TASKS.md')];
@@ -359,7 +361,12 @@ export const planMigration = (options: MigrateOptions): Plan => {
       : FORMERLY_FIELD.test(withName)
         ? withName.replace(FORMERLY_FIELD, `- **Formerly:** ${formerly.join(', ')}`)
         : withName.replace(NAME_FIELD, `$&${eol}- **Formerly:** ${formerly.join(', ')}`);
-    const withEmoji = options.emoji ? withFormerly.replace(/^(.*?\*\*Emoji:\*\*)[ \t]*.*$/m, `$1 ${options.emoji}`) : withFormerly;
+    const nickname = rename && NICKNAMES[rename.to];
+    const withNickname =
+      nickname && !/\*\*Nickname:\*\*/.test(withFormerly)
+        ? withFormerly.replace(NAME_FIELD, `$&${eol}- **Nickname:** ${nickname}`)
+        : withFormerly;
+    const withEmoji = options.emoji ? withNickname.replace(/^(.*?\*\*Emoji:\*\*)[ \t]*.*$/m, `$1 ${options.emoji}`) : withNickname;
     const avatarRel = options.avatar
       ? posix(join('assets', `${(rename?.to ?? current).toLowerCase().replace(/[^a-z0-9]+/g, '-')}-avatar${extname(options.avatar)}`))
       : undefined;

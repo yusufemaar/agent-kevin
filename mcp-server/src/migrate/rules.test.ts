@@ -51,6 +51,12 @@ describe('movePaths', () => {
     );
     expect(movePaths('/Users/ada/Agents/Kevinism', context.paths, USER)).toBe('/Users/ada/Agents/Kevinism');
   });
+
+  test('a shell spelling of the home keeps its spelling', () => {
+    expect(movePaths('d="$HOME/Agents/Kevin"; f="${HOME}/Agents/Kevin/.state"', context.paths, USER)).toBe(
+      'd="$HOME/Agents/Oppi"; f="${HOME}/Agents/Oppi/.state"'
+    );
+  });
 });
 
 describe('homeRelative', () => {

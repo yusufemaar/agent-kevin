@@ -24,7 +24,7 @@ export const SOURCE = {
   repo: 'AgentLayer1/agent-kevin'
 } as const;
 
-/** One old path and its replacement, each in absolute and `~/` spellings. */
+/** One old path and its replacement, matched in every spelling `spellings` lists. */
 export interface PathMove {
   from: string;
   to: string;
@@ -44,19 +44,22 @@ const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\
 /** A path ends at a separator, a quote, whitespace, punctuation or the end, never mid-name. */
 const pathPattern = (path: string): RegExp => new RegExp(`(?<![\\w./-])${escape(path)}(?=$|[/\\\\,:;\\s"'\`)\\]>*|])`, 'g');
 
-/** Both spellings of a path under the user's home: absolute and `~/`. */
-export const spellings = (path: string, userHome: string): string[] =>
-  path.startsWith(`${userHome}/`) ? [path, `~${path.slice(userHome.length)}`] : [path];
+/** The ways a shell or a config spells the user's home at the start of a path. */
+const HOME_PREFIXES = ['~', '$HOME', '${HOME}'];
 
-/** Every spelling of each move, longest first so a nested path is never cut by its parent. */
+/** Every spelling of a path under the user's home: absolute, `~/`, `$HOME/` and `${HOME}/`. */
+export const spellings = (path: string, userHome: string): string[] =>
+  path.startsWith(`${userHome}/`)
+    ? [path, ...HOME_PREFIXES.map((prefix) => `${prefix}${path.slice(userHome.length)}`)]
+    : [path];
+
+/** Every spelling of each move, each to the same spelling of its target, longest first so a nested path is never cut by its parent. */
 const expand = (moves: PathMove[], userHome: string): PathMove[] =>
   moves
-    .flatMap(({ from, to }) =>
-      spellings(from, userHome).map((spelling) => ({
-        from: spelling,
-        to: spelling.startsWith('~') ? (spellings(to, userHome)[1] ?? to) : to
-      }))
-    )
+    .flatMap(({ from, to }) => {
+      const targets = spellings(to, userHome);
+      return spellings(from, userHome).map((spelling, index) => ({ from: spelling, to: targets[index] ?? to }));
+    })
     .sort((left, right) => right.from.length - left.from.length);
 
 /** Rewrite every listed path in a string, whichever spelling it uses. */

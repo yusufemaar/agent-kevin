@@ -90,7 +90,7 @@ Then, per home, in order:
 3. **Open the new folder** with Claude Code, accept the trust prompt, and install the new plugin there if `/plugin` doesn't list it yet, choosing the scope for this folder only (never the whole account, or it also loads in the old home):
    - `install: dev`: the new plugin's checkout is `agentlayer-agent` in the same folder as the home's `checkout` (the preview blocks until it exists, so clone it there first, or pass `--checkout <path>` to the command). Then `/plugin marketplace add <that checkout>` and `/plugin install agentlayer@agentlayer-dev`.
    - `install: marketplace`: `/plugin install agentlayer@agentlayer`.
-4. **Exit and open the folder again.** A plugin's hooks start with a session, so the welcome comes on this second start: it finishes the move (the upgrade), greets the operator as the new agent, and offers the sessions to continue.
+4. **Exit and open the folder again.** A plugin's hooks start with a session, so the welcome comes on this second start: it greets the operator as the new agent, finishes the move (the upgrade, then a first sync in the new home), and offers the sessions to continue.
 5. **Point the rest at the new folder:** the Obsidian vault, terminal workspaces, and anything else opened from the old path.
 
 Say also:

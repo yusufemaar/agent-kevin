@@ -460,7 +460,7 @@ const releaseHolders = (worktreePath: string, cwd: string): StepResult => {
  * pnpm's `node_modules` junctions (it errors "Directory not empty" and leaves a husk). `rmdir /s /q`
  * clears the reparse points cmd-side — a single quoted `/c` string (shell:false) keeps paths with
  * spaces intact — and `fs.rmSync` is the fallback that names the blocker (e.g. a locked file).
- * TODO(windows): unverified on a real box — see lo-045.
+ * TODO(windows): unverified on a real box.
  */
 const deleteHusk = (dir: string): StepResult[] => {
   const steps: StepResult[] = [];

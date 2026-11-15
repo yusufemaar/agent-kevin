@@ -110,7 +110,7 @@ export const stopGroup = (pgid: number, graceMs = 10_000): void => {
  * Windows has no process groups, so taskkill stops the child and everything it started (the package manager behind
  * a `.cmd` shim's shell); if taskkill can't, the child alone, and the log says so.
  */
-// TODO(windows): unverified on a real box (lo-045), and children still outlive a server that exits.
+// TODO(windows): unverified on a real box, and children still outlive a server that exits.
 const stopTree = (child: ChildProcess): void => {
   if (child.pid === undefined) {
     return;

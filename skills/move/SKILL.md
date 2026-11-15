@@ -54,22 +54,26 @@ When unsure, it's a keep: a kept line can be edited by hand later, while a wrong
 
 Run the preview again with the `--keep` flags. Its only blocker should be "the home has changes its history has not committed (…); run sync first", or none. Anything else, explain it and stop for that home.
 
-## 4. Sessions to continue
+## 4. Sessions to pick up first
 
-Claude Code's old sessions can't be resumed from the new folder, but the brain holds them, and the new home can pick them up. Do this while the operator's sessions are still open. List the last week's sessions across every picked home (the attention skill's checkpoint only looks at this home and the last day):
+Every session stays reachable after the move; this step only chooses which ones the new home offers on its first start. Say so before listing anything, in words like these:
+
+> Nothing is lost here: in the new home you can pick up any past session at any time. Ask for it by its id or by what it worked on ("pick up the timetable session"), and the agent finds it in the brain and loads its notes, so you carry on where it stopped. The one thing that stays behind is `claude --resume`: Claude Code keeps transcripts by folder, so an old transcript resumes only from the old folder. This list just sets which sessions the new home offers you first. Pick any, or none.
+
+Do this while the operator's sessions are still open. List the last week's sessions across every picked home (the attention skill's checkpoint only looks at this home and the last day):
 
 ```bash
 bun "${CLAUDE_PLUGIN_ROOT}/skills/attention/scripts/list_sessions.ts" --hours 168 --scope "<home>,<home>"
 ```
 
-Show them as a numbered list grouped by home: title, how long ago, and one line on where it stopped (from `last_assistant_text`). Ask the operator to name the ones to continue (a list this long doesn't fit a four-option question), and whether any ongoing session is older than a week. For each pick, propose the next step from where it stopped and let them correct it.
+Show them as a numbered list grouped by home: title, how long ago, and one line on where it stopped (from `last_assistant_text`). Ask which ones to have offered first (a list this long doesn't fit a four-option question). For each pick, propose the next step from where it stopped and let them correct it.
 
 ## 5. Save a move note per home
 
 `report_write` with `category: plans`, `skill: move`, title `Move <old name> → <new name>`, here in the current home (never write into another home). The body:
 
 - **From → to:** the old folder and the new one, the old and new name, and the new history folder (`history.to` from the preview).
-- **Sessions to continue:** a table of session id, what it was doing, next step.
+- **Sessions to continue:** the picks from step 4, as a table of session id, what it was doing, next step. The welcome offers these first; any other session can still be picked up later by asking for it.
 - **Kept lines:** each `path:line`, its text, and why.
 - **The command:** the exact final command (below).
 

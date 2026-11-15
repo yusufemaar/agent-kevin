@@ -2,7 +2,7 @@
  * The machine-read files `migrate` rewrites in a home's copy: Claude settings and `.mcp.json`, and
  * the Codex wiring the old plugin generated. Pure, like the text rules.
  */
-import { type PathMove, SOURCE, movePaths, productText } from './rules';
+import { type PathMove, SOURCE, TARGET, movePaths, productText } from './rules';
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type JsonObject = { [key: string]: Json };
@@ -91,7 +91,10 @@ export const leftovers = (value: Json, path = ''): string[] => {
   return [];
 };
 
-const CODEX_TABLE = new RegExp(`^\\[(?:mcp_servers|permissions)\\.${SOURCE.server}(?:\\.[^\\]]*)?\\]\\s*(?:#.*)?$`);
+/** The old plugin's server and profile tables, and a table switching the new plugin off (set while the home ran the old one). */
+const CODEX_TABLE = new RegExp(
+  `^\\[(?:(?:mcp_servers|permissions)\\.${SOURCE.server}(?:\\.[^\\]]*)?|plugins\\."${TARGET.plugin}@[^"]*")\\]\\s*(?:#.*)?$`
+);
 const ANY_TABLE = /^\s*\[/;
 const CODEX_DEFAULT = new RegExp(`^default_permissions\\s*=\\s*"${SOURCE.server}"\\s*$`);
 

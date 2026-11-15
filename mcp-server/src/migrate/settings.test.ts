@@ -104,6 +104,11 @@ describe('migrateCodexConfig', () => {
     const own = '[plugins."agent-kevin@agentdev-kevin"]\nenabled = true\n';
     expect(migrateCodexConfig(own, moves, USER, ['agent-kevin@agentdev-kevin'])).toBe(own);
   });
+
+  test('drops a table that switched the new plugin off while the home ran the old one', () => {
+    const toml = '[plugins."agentlayer@agentlayer-dev"]\nenabled = false\n\n[tui]\nx = 1\n';
+    expect(migrateCodexConfig(toml, moves, USER, [])).toBe('[tui]\nx = 1\n');
+  });
 });
 
 describe('migrateCodexHooks', () => {

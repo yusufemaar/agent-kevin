@@ -43,7 +43,7 @@ It prints the blockers, every line the rename would change (`path:line | text`),
 **Read every renamed line for meaning.** The rename is right when the old name means this agent or this plugin. It is wrong, and the line needs `--keep <path>:<line>`, when the old name is:
 
 - another person ("Kevin Moreau", a byline);
-- someone else's agent ("Ada's Kevin", "the acme team's Scout");
+- someone else's agent ("Ada's Kevin", "the acme team's Scout"), unless that agent moves to the same new name: once Ada's Kevin is Oppi, "Ada's Kevin" renames in a home taking Oppi (ask the operator when unsure);
 - an account, workspace, role or product name ("Agent Kevin" as a support-desk role or a terminal workspace);
 - a title or quotation of something outside this home;
 - history that would turn false: what the agent was called then (an old bot's name, a message it signed and sent, "a renamed Kevin" describing another agent's origin), or a dated attribution ("first draft by Kevin, 2026-04-26").

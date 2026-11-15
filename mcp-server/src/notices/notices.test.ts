@@ -76,6 +76,11 @@ describe('sync escalation', () => {
     ]);
   });
 
+  test('a home behind the installed version is offered the upgrade, not the move it would refuse', async () => {
+    const notices = await withHome({ ...versionAt(previousRelease ?? '0.0.1'), ...syncedDaysAgo(0) }, () => collectNotices());
+    expect(notices.map((notice) => notice.id)).toEqual(['upgrade']);
+  });
+
   test('a moved home stops offering the move', async () => {
     const notices = await withHome(
       { 'version.json': JSON.stringify({ plugin: pluginName(), templateVersion: PLUGIN_VERSION, movedTo: '/elsewhere/Oppi' }), ...syncedDaysAgo(0) },
@@ -119,8 +124,7 @@ describe('upgrade escalation', () => {
     const quiet = await withHome({ ...versionAt(previousRelease ?? ''), ...syncedDaysAgo(9) }, () => collectNotices());
     expect(quiet.map((notice) => [notice.id, notice.level])).toEqual([
       ['upgrade', 'nudge'],
-      ['sync', 'alert'],
-      ['move', 'hint']
+      ['sync', 'alert']
     ]);
   });
 });

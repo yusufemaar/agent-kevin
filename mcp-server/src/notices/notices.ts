@@ -126,9 +126,12 @@ const syncNotice: NoticeSource = async () => {
   };
 };
 
-/** The way to the new plugin, offered quietly until the home has moved; a fresh home's welcome comes first. */
+/**
+ * The way to the new plugin, offered quietly until the home has moved. It waits for a fresh home's
+ * welcome, and for the upgrade, since the move refuses a home behind the installed version.
+ */
 const moveNotice: NoticeSource = async () =>
-  readMovedTo() !== null || readCadence().welcome === 'pending'
+  readMovedTo() !== null || readCadence().welcome === 'pending' || getUpgradeStatus().state !== 'current'
     ? null
     : {
         id: 'move',

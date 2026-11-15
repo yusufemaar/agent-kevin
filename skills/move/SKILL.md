@@ -91,11 +91,15 @@ Then, per home, in order:
 
 1. **In that home:** exit every session there, the one running this skill included. Exiting saves each session's last turns to the brain. Don't sync first: sync compiles into the very files the line keeps point at, and moves their lines. Everything since the last sync comes across with the move, and the new home's first sync compiles and commits it.
 2. **In their own terminal** (not Claude Code): the command above. `--retire` marks the old home as moved, so its sessions say so and its sync stops committing.
-3. **Open the new folder** with Claude Code, accept the trust prompt, and install the new plugin there if `/plugin` doesn't list it yet, choosing the scope for this folder only (never the whole account, or it also loads in the old home):
-   - `install: dev`: the new plugin's checkout is `agentlayer-agent` in the same folder as the home's `checkout` (the preview blocks until it exists, so clone it there first, or pass `--checkout <path>` to the command). Then `/plugin marketplace add <that checkout>` and `/plugin install agentlayer@agentlayer-dev`.
-   - `install: marketplace`: `/plugin install agentlayer@agentlayer`.
-4. **Exit and open the folder again.** A plugin's hooks start with a session, so the welcome comes on this second start: it greets the operator as the new agent, finishes the move (the upgrade, then a first sync in the new home), and offers the sessions to continue.
-5. **Point the rest at the new folder:** the Obsidian vault, terminal workspaces, and anything else opened from the old path.
+3. **In the same terminal, install the new plugin for the new folder only**, so its first open already has it:
+   - `install: dev`: `cd "<new folder>" && claude plugin install agentlayer --marketplace "<agentlayer-agent checkout>" --scope local`. The checkout is `agentlayer-agent` in the same folder as the home's `checkout`; the preview blocks until it exists, so clone it there first (or pass `--checkout <path>` to the move).
+   - `install: marketplace`: `cd "<new folder>" && claude plugin install agentlayer@agentlayer --scope local`.
+
+   `--scope local` installs it for that folder alone; the whole-account default would also load it in the old home.
+4. **Open the new folder.** The welcome greets the operator as the new agent, finishes the move (the upgrade, then a first sync in the new home), and offers the sessions picked in step 4. If `/plugin` doesn't list agentlayer, the install didn't land: run it again, then reopen.
+5. **Point the rest at the new folder:**
+   - **Auto mode:** if `~/.claude/settings.json` has an `autoMode` block, its `environment` entry starting "Agent homes:" lists the homes the custom rules apply to. Add the new folder's path there and keep the others; the welcome's upgrade flags it too. Until then, routine writes in the new home aren't treated as agent-home work.
+   - The Obsidian vault, terminal workspaces, and anything else opened from the old path.
 
 Say also:
 

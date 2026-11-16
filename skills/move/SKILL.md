@@ -38,7 +38,7 @@ Run the preview from that home's folder, with the session's own `AGENT_*` paths 
 P=$(mktemp "${TMPDIR:-/tmp}/move-preview-XXXXXX") && ( cd "<home>" && env -u AGENT_HOME -u AGENT_KNOWLEDGE -u AGENT_PROJECTS -u AGENT_REPORTS bun "${CLAUDE_PLUGIN_ROOT}/bin/kevin" migrate --to "<new folder>" --name "<new name>" <emoji and avatar flags> ) > "$P"; bun "${CLAUDE_PLUGIN_ROOT}/skills/move/scripts/keep-candidates.ts" "$P"
 ```
 
-It prints the blockers, every line the agent's rename would change and every line the plugin's rename would change (`path:line | text`), the values the settings still use under the old plugin's name, lines left as written for review, and lines kept for the operator to rewrite. The preview's own JSON (`$P`) also names the new history folder (`history.to`): keep it for the move note.
+It prints the blockers, every line the agent's rename would change and every line the plugin's rename would change (`path:line | text`), the values the settings still use under the old plugin's name, lines left as written for review, and lines kept for the operator to rewrite. The preview's own JSON (`$P`) also names the history folders (`history.from`, `history.to`): keep them for the move note.
 
 **Read every renamed line for meaning, in both rename sections.** The rename is right when the old name means this agent or this plugin. It is wrong, and the line needs `--keep <path>:<line>`, when the old name is:
 
@@ -73,12 +73,31 @@ Show them as a numbered list grouped by home: title, how long ago, and one line 
 
 `report_write` with `category: plans`, `skill: move`, title `Move <old name> → <new name>`, here in the current home (never write into another home). The body:
 
-- **From → to:** the old folder and the new one, the old and new name, and the new history folder (`history.to` from the preview).
+- **From → to:** the old folder and the new one, the old and new name, and both history folders (`history.from` and `history.to` from the preview; the old one is deleted at retirement, the new one on a start-over).
 - **Sessions to continue:** the picks from step 4, as a table of session id, what it was doing, next step. The welcome offers these first; any other session can still be picked up later by asking for it.
 - **Kept lines:** each `path:line`, its text, and why.
-- **The command:** the exact final command (below).
+- **The command:** the exact final command (step 6).
+- **After the command:** the checklist below, as `- [ ]` items with this home's real paths, marketplace and commands filled in. Leave out what doesn't apply (the Codex items in a home without `.codex/hooks.json`, the auto-mode item when `~/.claude/settings.json` has no `autoMode` block). Step 1 tells the operator to close this session, so the note is the only copy of these steps that survives it: put every step in the note, not just in the reply.
 
-The tool returns the note's absolute `path`: that, not `relPath`, goes in the final command, since the command runs from the home being moved. The new home's first session reads the note to greet the operator and offer those sessions.
+The tool returns the note's absolute `path`: that, not `relPath`, goes in the final command, since the command runs from the home being moved. The new home's first session reads the note to greet the operator, offer those sessions, and walk through what's left of the checklist.
+
+### The checklist
+
+1. **Close every session in this home**, the one running this skill included. Exiting saves each session's last turns to the brain. Don't sync first: sync compiles into the very files the line keeps point at, and moves their lines. Everything since the last sync comes across with the move, and the new home's first sync compiles and commits it.
+2. **Run the command in your own terminal** (not Claude Code). `--retire` marks the old home as moved, so its sessions say so and its sync stops committing.
+3. **Install agentlayer for the new folder only**, in the same terminal, so its first open already has it. `--scope local` keeps it out of the old home; the whole-account default would load it there too.
+   - `install: dev`: `cd "<new folder>" && claude plugin install agentlayer --marketplace "<agentlayer-agent checkout>" --scope local`. The checkout is `agentlayer-agent` in the same folder as the home's `checkout`; the preview blocks until it exists, so clone it there first (or pass `--checkout <path>` to the move).
+   - `install: marketplace`: `cd "<new folder>" && claude plugin install agentlayer@agentlayer --scope local`.
+4. **Codex** (a home with `.codex/hooks.json`). Codex registers plugins for the whole account. The move already switched the old plugin off in the new home's `.codex/config.toml`; add agentlayer once: `codex plugin marketplace add "<agentlayer-agent checkout>"` then `codex plugin add agentlayer@agentlayer-dev` for a dev install; `codex plugin add agentlayer@agentlayer` for a marketplace install, whose marketplace is already added. From then on, a home still on the old plugin loads both in Codex: add `[plugins."agentlayer@<marketplace>"]` with `enabled = false` to that home's `.codex/config.toml` until it moves.
+5. **Open the new folder.** The welcome greets you as the new agent, checks the move, upgrades and syncs, and offers the sessions above. If `/plugin` doesn't list agentlayer, the install didn't land: run it again, then reopen.
+6. **Auto mode** (when `~/.claude/settings.json` has an `autoMode` block). Its `environment` entry starting "Agent homes:" lists the homes the custom rules apply to: add `<new folder>` and keep the others. Until then, routine writes in the new home aren't treated as agent-home work.
+7. **Repoint the rest** at the new folder: the Obsidian vault (open `<new folder>` as a vault), terminal and cmux workspaces, and anything else opened from the old path. Run helpdesk and Slack routines from one home only, since the copy holds the same credentials.
+8. **Retire the old home**, once you've worked in the new one for a while:
+   - Claude Code: `cd "<old folder>" && claude plugin uninstall agent-kevin@<marketplace> --scope local`, and again with `--scope project` if `/plugin` there still lists it. When no home is left on it and it came from a checkout: `claude plugin marketplace remove <marketplace>`.
+   - Codex: in `~/.codex/config.toml`, delete `[projects."<old folder>"]` and the four `[hooks.state."<old folder>/.codex/hooks.json:…"]` tables. When no home is left on the old plugin: `codex plugin remove agent-kevin@<marketplace>`, and for a dev install `codex plugin marketplace remove <marketplace>` (a marketplace install keeps its marketplace: agentlayer comes from the same one).
+   - Remove the old vault from Obsidian's vault list.
+   - Last, delete `<old folder>` and its history folder (`<old history folder>`) by hand.
+9. **Going back** (instead of 8): delete the `"movedTo"` line from the old home's `.state/version.json`. **Starting over:** delete the new folder and the new history folder, remove `"movedTo"`, and run this skill again; anything done in the new home since the move is lost, so most problems are better fixed in the new home.
 
 ## 6. Hand over, one home at a time
 
@@ -88,24 +107,4 @@ The final command for each home, with every path absolute, written in full:
 cd "<home>" && env -u AGENT_HOME -u AGENT_KNOWLEDGE -u AGENT_PROJECTS -u AGENT_REPORTS bun "${CLAUDE_PLUGIN_ROOT}/bin/kevin" migrate --to "<new folder>" --name "<new name>" <emoji and avatar flags> <--keep flags> --welcome "<move note path>" --apply --retire
 ```
 
-Then, per home, in order:
-
-1. **In that home:** exit every session there, the one running this skill included. Exiting saves each session's last turns to the brain. Don't sync first: sync compiles into the very files the line keeps point at, and moves their lines. Everything since the last sync comes across with the move, and the new home's first sync compiles and commits it.
-2. **In their own terminal** (not Claude Code): the command above. `--retire` marks the old home as moved, so its sessions say so and its sync stops committing.
-3. **In the same terminal, install the new plugin for the new folder only**, so its first open already has it:
-   - `install: dev`: `cd "<new folder>" && claude plugin install agentlayer --marketplace "<agentlayer-agent checkout>" --scope local`. The checkout is `agentlayer-agent` in the same folder as the home's `checkout`; the preview blocks until it exists, so clone it there first (or pass `--checkout <path>` to the move).
-   - `install: marketplace`: `cd "<new folder>" && claude plugin install agentlayer@agentlayer --scope local`.
-
-   `--scope local` installs it for that folder alone; the whole-account default would also load it in the old home.
-
-   **A home that runs Codex** (it has `.codex/hooks.json`) also needs the plugin in Codex, which registers plugins for the whole account. The move switches the old plugin off in the new home's `.codex/config.toml`, and the welcome's upgrade prints the two `codex plugin` lines that add agentlayer. Once agentlayer is on in Codex, a home still on the old plugin loads both there: add `[plugins."agentlayer@<marketplace>"]` with `enabled = false` to that home's `.codex/config.toml` until it moves.
-4. **Open the new folder.** The welcome greets the operator as the new agent, finishes the move (the upgrade, then a first sync in the new home), and offers the sessions picked in step 4. If `/plugin` doesn't list agentlayer, the install didn't land: run it again, then reopen.
-5. **Point the rest at the new folder:**
-   - **Auto mode:** if `~/.claude/settings.json` has an `autoMode` block, its `environment` entry starting "Agent homes:" lists the homes the custom rules apply to. Add the new folder's path there and keep the others; the welcome's upgrade flags it too. Until then, routine writes in the new home aren't treated as agent-home work.
-   - The Obsidian vault, terminal workspaces, and anything else opened from the old path.
-
-Say also:
-
-- **Going back:** delete the `"movedTo"` line from the old home's `.state/version.json`.
-- **Starting over:** delete the new folder and the history folder the move note names, remove `"movedTo"`, and run this skill again. Anything done in the new home since the move is lost, so most problems are better fixed in the new home.
-- **Helpdesk and Slack routines:** run them from one home only, since the copy holds the same credentials.
+Then give the note's checklist as written, with the note's absolute path above it and this line: "This session closes in step 1, so keep the note open; it holds every step, and the new home walks through what's left."

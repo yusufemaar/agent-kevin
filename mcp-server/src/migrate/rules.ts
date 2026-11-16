@@ -9,7 +9,6 @@ import { renameAgent } from '@/shared/agent-name';
 export const TARGET = {
   plugin: 'agentlayer',
   server: 'agent',
-  marketplace: 'agentlayer',
   devMarketplace: 'agentlayer-dev',
   stateFolder: 'agentlayer',
   checkout: 'agentlayer-agent',
@@ -19,10 +18,14 @@ export const TARGET = {
 export const SOURCE = {
   plugin: 'agent-kevin',
   server: 'kevin',
-  devMarketplace: 'agentdev-kevin',
-  stateFolder: 'agent-kevin',
-  repo: 'AgentLayer1/agent-kevin'
+  devMarketplace: 'agentdev-kevin'
 } as const;
+
+// A slash command, the marketplace id and the tool prefix rename mechanically; nothing about them needs a second look.
+const MECHANICAL = /\/agentlayer:\S+|agentlayer@agentlayer(?:-dev)?\b|mcp__plugin_agentlayer_\w*/g;
+
+/** Whether a line names the new plugin in a way a person should read: a login, an address, a checkout path, prose. */
+export const namesPlugin = (text: string): boolean => text.replace(MECHANICAL, '').includes(TARGET.plugin);
 
 /** One old path and its replacement, matched in every spelling `spellings` lists. */
 export interface PathMove {

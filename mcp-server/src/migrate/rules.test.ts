@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { type RuleContext, homeRelative, migrateText, movePaths, productText, taskAssignee } from './rules';
+import { type RuleContext, homeRelative, migrateText, movePaths, namesPlugin, productText, taskAssignee } from './rules';
 
 const USER = '/Users/ada';
 const HOME = { from: '/Users/ada/Agents/Kevin', to: '/Users/ada/Agents/Oppi' };
@@ -13,6 +13,17 @@ const context: RuleContext = {
   rename: { from: 'Kevin', to: 'Oppi' }
 };
 const migrate = (text: string, keep: number[] = []) => migrateText(text, context, USER, new Set(keep));
+
+describe('namesPlugin', () => {
+  test('reads past the mechanical forms and catches a login, an address, a checkout path or prose', () => {
+    for (const mechanical of ['run /agentlayer:sync', '"agentlayer@agentlayer-dev": true', 'mcp__plugin_agentlayer_agent__task_query']) {
+      expect(namesPlugin(mechanical)).toBe(false);
+    }
+    for (const readable of ['ping agentlayer@acme.example', '~/Developer/AgentLayer/agentlayer-agent/src/x.ts', 'the agentlayer plugin', 'agentlayer_bot posted']) {
+      expect(namesPlugin(readable)).toBe(true);
+    }
+  });
+});
 
 describe('productText', () => {
   test('tool ids, commands, grants and marketplaces take the new plugin and server names', () => {

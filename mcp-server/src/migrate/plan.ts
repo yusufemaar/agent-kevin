@@ -9,7 +9,7 @@ import { RUNTIME_DIR } from '@/shared/naming';
 import { todayDate } from '@/shared/date';
 import { ENTRY_SPLIT_RE } from '@/knowledge/session-format';
 import { canonicalPath, recordedGitDir } from '@/home/git-dir-record';
-import { type PathMove, type RuleContext, SOURCE, TARGET, migrateText, productText, taskAssignee } from './rules';
+import { type PathMove, type RuleContext, SOURCE, TARGET, migrateText, namesPlugin, productText, taskAssignee } from './rules';
 import { isInside } from '@/shared/paths';
 import { type JsonObject, leftovers, migrateCodexConfig, migrateCodexHooks, migrateSettings } from './settings';
 
@@ -336,7 +336,7 @@ export const planMigration = (options: MigrateOptions): Plan => {
     lineChanges(rel, before, after).forEach((change) => {
       if (personaLines.has(change.line)) {
         report.persona.push(change);
-      } else if (/agentlayer(?![-\w@:_])/.test(change.after) && !/agentlayer(?![-\w@:_])/.test(change.before)) {
+      } else if (namesPlugin(change.after) && !namesPlugin(change.before)) {
         report.product.push(change);
       } else {
         tally('paths, commands and tool names');

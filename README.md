@@ -22,6 +22,17 @@ One markdown folder, one plugin, a brain that learns who you are session after s
 
 ---
 
+> [!IMPORTANT]
+> **Kevin has been superseded by [Oppi](https://github.com/AgentLayer1/agentlayer-agent), on the `agentlayer` plugin.** This repository is archived: 0.9.5 is its final release, and it gets no further updates. Your home moves to the new plugin with everything in it (memory, projects, tasks, reports, history), and the copy keeps your agent's name unless you pick a new one (an agent named Kevin is offered Oppi).
+>
+> 1. **Update to the final release.** Pull agent-kevin 0.9.5 (`/plugin update agent-kevin@agentlayer` in Claude Code; remove and re-add `agent-kevin@agentlayer` in Codex), then run the `upgrade` skill.
+> 2. **Move.** Run `/agent-kevin:move` in Claude Code, or `$move` in Codex, from your home. It previews the copy, asks which mentions of the old name mean someone else, and hands you one command to run in your own terminal. Nothing is copied until you run it, and your current home is never changed.
+> 3. **Open the new folder.** Start a session there with the `agentlayer` plugin installed (the move prints the install command). Its first session finishes the move: it checks the renames with you, upgrades and syncs.
+>
+> Once you've worked in the new home for a while, the old folder can go.
+
+---
+
 ## What is Kevin?
 
 Kevin is a portable, file-based personal AI assistant that plugs into the agent CLI you already use, [Claude Code](https://docs.claude.com/en/docs/claude-code) or [OpenAI Codex](https://developers.openai.com/codex). Everything that makes Kevin *Kevin* (personality, memory, knowledge, projects, tasks) lives in your own directory as plain markdown. Any AI can read it. You can browse it in Obsidian or Finder. If you ever want to leave, you take the folder and go.
